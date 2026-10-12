@@ -1,4 +1,4 @@
-# مهاجرت به رانتایم عامل‌ها (v15.24 · سرور 1.18) — Mastra + Vercel AI SDK + MCP SDK
+# مهاجرت به رانتایم عامل‌ها (v15.25 · سرور 1.19) — Mastra + Vercel AI SDK + MCP SDK
 
 این سند اجرای «نقشهٔ راه مهاجرت» را توضیح می‌دهد. اصل طراحی: **سرور فعلی (`server.js`) همچنان منبع حقیقت و موتور سیاست است**؛ رانتایم جدید (`runtime/`) یک sidecar است که مدل، حلقهٔ عامل، گردش‌کار، ردیابی و MCP استاندارد را فراهم می‌کند، ولی **هر فراخوانی ابزار از راه پل به `agCall` سرور برمی‌گردد**. بنابراین فهرست مجاز ابزار هر عامل، نقش‌ها، کلیدهای داده، سقف‌های روزانه، سطح خودمختاری، کارتابل تأیید، اصل چهار چشم، کلید توقف اضطراری و زنجیرهٔ ممیزی بدون تغییر اعمال می‌شوند.
 
@@ -23,12 +23,14 @@
 | ۵ · فرایندها | تعریف‌های `ag_flow` (۹ الگو + فرایندهای کاربر: tool/agent/llm/notify/gate، `when`، `onFail`، `{{…}}`) به گردش‌کار Mastra کامپایل و اجرا می‌شوند (`IFA_RUNTIME_FLOWS=on`)؛ زبان قالب/شرط **عیناً** از `server.js` تولید می‌شود؛ گزارش گام‌به‌گام، لغو، ثبت `last_log` مثل قبل؛ اگر رانتایم در دسترس نباشد موتور قبلی اجرا می‌کند | `runtime/src/workflows/flows.js`، `runtime/src/legacy.gen.js` |
 | ۶ · MCP استاندارد | نقطهٔ `/mcp` رانتایم با SDK رسمی (Streamable HTTP، stateless) با همان کلیدهای `ifa_mcp_…`: ابزارهای مجاز کلید + `ask_analyst` (پاسخ مستند) + `workflow_start`/`workflow_status`. نقطهٔ `/mcp` قدیمی سرور برای سازگاری می‌ماند | `runtime/src/mcp.js` |
 | ۷ · پایداری و ارزیابی | ذخیرهٔ LibSQL برای snapshot گردش‌کارها + فهرست اجراها؛ ادامهٔ اجرا پس از راه‌اندازی دوبارهٔ رانتایم (آزموده‌شده)؛ promptfoo برای ارزیابی رگرسیون؛ CI برای رانتایم | `runtime/src/runs.js`، `runtime/evals/` |
+| ۸ · وب زنده و خودکارگردان سرور | یکپارچگی کامل Tavily (search/extract/crawl/map/research/usage) با سقف اعتبار، ابزارهای عامل و پایش؛ گردش‌کارهای `deep-research` (پژوهش عمیق با poll پایدار و ثبت در حافظهٔ سازمانی) و `lane-autopilot` (اجرای خودکارگردان مسیر در سرور) | `dev/src/p5/s_tavily.js`، `dev/src/p5/t_apsrv.js`، `runtime/src/workflows/research.js`، [`docs/tavily.md`](tavily.md) |
 
-### آنچه عمداً انجام نشد (و چرا)
-- **خودکارگردان (autopilot)** در مرورگر اجرا می‌شود و موتور مسیریابی سمت سرور ندارد؛ انتقال کامل آن به سرور بازنویسی رابط کاربری است و در این مرحله انجام نشد. فرایندهای سمت سرور (فاز ۵) منتقل شده‌اند.
-- **شکستن `server.js` به ماژول‌ها**: ماژول‌ها در `dev/src/p5/` نگهداری می‌شوند و `scripts/inject-module.js` ماژول پل را بین نشانگرها درج می‌کند؛ تقسیم فایل اجرایی به چند فایل به‌دلیل ریسک بالا و آزمون «نسخهٔ جاسازی‌شدهٔ server.js در index.html» به بعد موکول شد.
-- **Temporal/DBOS و mem0/Graphiti**: برای حجم فعلی، LibSQL + poll برای پایداری کافی است؛ حافظه همچنان `memory_search` سرور (FTS) است. اگر گردش‌کارهای چندروزه با هزاران اجرا لازم شد، Temporal گام بعدی است.
-- مدل‌های واقعی در CI آزموده نمی‌شوند (مدل جعلی با فراخوانی بومی ابزار)؛ پیش از `primary` حتماً `npm run probe:llm` و حالت `shadow` را اجرا کنید.
+### تصمیم‌های معماری (به‌روزشده در v15.25)
+- **خودکارگردان (autopilot)** اکنون سمت سرور هم اجرا می‌شود (`t_apsrv.js`): مقایسهٔ مسیر، نرخ‌ها، ارز و خبرهای ثبت‌شده/زندهٔ Tavily → `ap_runs` با `mode=server`، ثبت در حافظهٔ سازمانی و رویداد `autopilot.done`؛ زمان‌بندی هر مسیر (`GET/PUT /api/ap/lanes`)، ابزار عامل `autopilot_run` و گردش‌کار `lane-autopilot`.
+- **`server.js` شکسته شد:** منبع در `server/src/*.js` + ماژول‌های `dev/src/p5/` با ترتیب `server/manifest.json` است و `scripts/build-server.js` آن‌ها را بایت‌به‌بایت به `server.js` تبدیل می‌کند (`--check` در CI). `scripts/inject-module.js` دیگر استفاده نمی‌شود.
+- **Temporal/DBOS لازم نشد:** Mastra + LibSQL پایداری snapshot و ادامه پس از راه‌اندازی دوباره را فراهم می‌کند (آزموده‌شده، از جمله poll چندساعتهٔ پژوهش). اگر هزاران اجرای چندروزه لازم شد، Temporal گام بعدی است.
+- **mem0/Graphiti جایگزین شد** با حافظهٔ سازمانی سرور (`ag_mem` / `memory_search`) که اکنون از نتایج پژوهش Tavily و اجراهای خودکارگردان تغذیه می‌شود؛ بدون سرویس اضافه و زیر همان کنترل دسترسی.
+- مدل‌ها و Tavily واقعی در CI عادی آزموده نمی‌شوند (مدل/Tavily جعلی)؛ کار `live` در CI با `workflow_dispatch` (ورودی `live`) و secrets (`TAVILY_API_KEY`، `LLM_*`) `probe:tavily` و `probe:llm` را اجرا می‌کند. پیش از `primary` حتماً `shadow` را اجرا کنید.
 
 ## راه‌اندازی
 
@@ -65,6 +67,8 @@ IFA_RUNTIME_URL=http://127.0.0.1:8090 IFA_RUNTIME_MODE=shadow npm start
 | `RT_LLM_*` / `IFA_LLM_*` / `LITELLM_URL` | رانتایم | مدل (اولویت به همین ترتیب)؛ `RT_LLM_LOCAL=1` یعنی مدل محلی (بدون پوشاندن PII) |
 | `LANGFUSE_HOST`، `LANGFUSE_PUBLIC_KEY`، `LANGFUSE_SECRET_KEY` | رانتایم | ردیابی |
 | `RT_DATA`، `RT_PORT`، `RT_MAX_STEPS`، `RT_POLL_SEC` | رانتایم | ذخیره‌سازی، درگاه، سقف گام‌های عامل، فاصلهٔ poll تأییدها |
+| `RT_RESEARCH_POLL_SEC`، `RT_RESEARCH_MAX_POLLS` | رانتایم | فاصله و سقف poll گردش‌کار `deep-research` (پیش‌فرض ۱۵ ثانیه، ۲۴۰ بار) |
+| `IFA_TAVILY_KEY` و `IFA_TAVILY_*` | سرور | کلید و سقف‌های Tavily — [`docs/tavily.md`](tavily.md) |
 
 ## API
 
@@ -76,6 +80,5 @@ IFA_RUNTIME_URL=http://127.0.0.1:8090 IFA_RUNTIME_MODE=shadow npm start
 **رانتایم (Bearer همان رمز):** `GET /healthz` · `POST /v1/agents/:id/ask` · `POST /v1/flows/run` · `GET /v1/workflows` · `POST /v1/workflows/:id/start` · `GET /v1/runs[/:id]` · `POST /v1/hooks/approval` · `POST /mcp` (کلید `ifa_mcp_…`).
 
 ## نگهداری
-- ماژول پل در `dev/src/p5/r_runtime.js` است؛ پس از ویرایش: `npm run build:server` (درج در `server.js`، تولید `runtime/src/legacy.gen.js` از توابع نگهبان سرور، و بازجاسازی `server.js` در `index.html` با بازنویسی فقط بخش‌های تغییرکردهٔ `bundle/`).
-- `npm run check:build` در CI همگامی این سه را بررسی می‌کند.
-- آزمون‌ها: `npm test` (شامل `test/runtime.bridge.test.js` بدون وابستگی) و `npm run test:runtime` (سرتاسری: سرور واقعی + رانتایم واقعی + مدل جعلی با فراخوانی بومی ابزار + Langfuse و SMTP جعلی).
+- کد سرور را در `server/src/*.js` یا `dev/src/p5/*.js` ویرایش کنید (نه مستقیم `server.js`)، سپس `npm run build:server` (ساخت `server.js` از manifest، تولید `runtime/src/legacy.gen.js` از توابع نگهبان سرور، و بازجاسازی `server.js` و ماژول‌های کلاینت در `index.html` با بازنویسی فقط بخش‌های تغییرکردهٔ `bundle/`).
+- `npm run check:build` در CI همگامی همهٔ این‌ها را بررسی می‌کند.

@@ -4,13 +4,14 @@ import fs from 'node:fs';
 import {Mastra} from '@mastra/core/mastra';
 import {LibSQLStore} from '@mastra/libsql';
 import {hitlWorkflows,FINAL} from './workflows/hitl.js';
+import {researchWorkflows} from './workflows/research.js';
 import {runIndex} from './runs.js';
 
 export function createEngine({cfg,ifa,tracer}){
   fs.mkdirSync(cfg.dataDir,{recursive:true});
   const runs=runIndex(cfg.dataDir);
   const deps={ifa,cfg,tracer,runs};
-  const WF=hitlWorkflows(deps);
+  const WF={...hitlWorkflows(deps),...researchWorkflows(deps)};
   const mastra=new Mastra({workflows:WF,storage:new LibSQLStore({id:'ifa-runtime',url:'file:'+path.join(cfg.dataDir,'mastra.db')}),logger:false});
   const busy=new Set();
 

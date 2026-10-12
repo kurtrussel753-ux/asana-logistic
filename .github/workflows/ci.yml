@@ -1,5 +1,13 @@
 name: ci
-on: [push, pull_request]
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      live:
+        description: 'Run live probes (Tavily / model) with repository secrets'
+        type: boolean
+        default: false
 jobs:
   test:
     runs-on: ubuntu-latest
@@ -13,7 +21,7 @@ jobs:
           node-version: ${{ matrix.node }}
       - run: node scripts/restore.js
       - run: node --check server.js
-      - name: build artefacts in sync (bridge module, runtime guards, embedded server copy)
+      - name: build artefacts in sync (server.js from server/src + dev/src, runtime guards, embedded server copy)
         run: npm run check:build
       - run: npm test
   runtime:
@@ -34,3 +42,25 @@ jobs:
       - name: e2e — server bridge + Mastra runtime + MCP SDK (fake model, no network)
         run: npm test
         working-directory: runtime
+  live:
+    # manual only: Actions › ci › Run workflow › live = true. Secrets: TAVILY_API_KEY (and optionally LLM_PROVIDER / LLM_URL / LLM_MODEL / LLM_KEY)
+    if: github.event_name == 'workflow_dispatch' && inputs.live
+    runs-on: ubuntu-latest
+    env:
+      IFA_TAVILY_KEY: ${{ secrets.TAVILY_API_KEY }}
+      RT_LLM_PROVIDER: ${{ secrets.LLM_PROVIDER }}
+      RT_LLM_URL: ${{ secrets.LLM_URL }}
+      RT_LLM_MODEL: ${{ secrets.LLM_MODEL }}
+      RT_LLM_KEY: ${{ secrets.LLM_KEY }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - run: node scripts/restore.js
+      - name: live Tavily probe (search, extract, map, crawl, usage ≈ 6 credits)
+        if: env.IFA_TAVILY_KEY != ''
+        run: node scripts/tavily-probe.js
+      - name: live model probe (native tool calling, JSON, Persian)
+        if: env.RT_LLM_PROVIDER != ''
+        run: node scripts/llm-probe.js

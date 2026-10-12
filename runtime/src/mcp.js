@@ -19,7 +19,7 @@ export async function handleMcp(req,res,parsed,{cfg,ifa,tracer,engine}){
   }
   server.registerTool('ask_analyst',{description:'پرسش فارسی از «تحلیل‌گر بازار» روی داده‌های IFA؛ هر عدد پاسخ با منبع ابزار سنجیده می‌شود (Mastra + AI SDK)',inputSchema:{question:z.string().describe('پرسش')},annotations:{readOnlyHint:true}},
     async({question})=>{try{const r=await askAgent({cfg,ifa,tracer,agentId:'analyst',ctx:id.ctx,question,by:id.who});return txt({answer:r.answer,grounded:r.grounded,sources:r.sources,model:r.model},!r.grounded)}catch(e){return txt('خطا: '+e.message,true)}});
-  server.registerTool('workflow_start',{description:'شروع گردش‌کار دارای تأیید انسانی: procurement-rfq (استعلام) یا finance-payment (درخواست پرداخت)',inputSchema:{workflow:z.enum(['procurement-rfq','finance-payment']),input:z.record(z.string(),z.any())}},
+  server.registerTool('workflow_start',{description:'شروع گردش‌کار رانتایم: procurement-rfq (استعلام با تأیید)، finance-payment (پرداخت با تأیید)، deep-research (پژوهش عمیق Tavily: {q, model})، lane-autopilot (خودکارگردان مسیر: {pol, dest, eq, web})',inputSchema:{workflow:z.enum(['procurement-rfq','finance-payment','deep-research','lane-autopilot']),input:z.record(z.string(),z.any())}},
     async({workflow,input})=>{try{return txt(await engine.start(workflow,{by:id.who,role:id.role,input}))}catch(e){return txt('خطا: '+e.message,true)}});
   server.registerTool('workflow_status',{description:'وضعیت یک اجرای گردش‌کار',inputSchema:{runId:z.string()},annotations:{readOnlyHint:true}},
     async({runId})=>{const r=engine.runs.get(runId);return r?txt(r):txt('یافت نشد',true)});

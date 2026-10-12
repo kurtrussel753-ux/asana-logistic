@@ -31,6 +31,7 @@ export function loadConfig(env=process.env){
     llm:providerSpec(env),
     maxSteps:Math.max(2,Math.min(12,+env.RT_MAX_STEPS||6)),
     pollSec:Math.max(5,+env.RT_POLL_SEC||60),
+    researchPollSec:Math.max(0.2,+env.RT_RESEARCH_POLL_SEC||15),researchMaxPolls:Math.max(1,+env.RT_RESEARCH_MAX_POLLS||240),
     langfuse:{host:String(env.LANGFUSE_HOST||env.LANGFUSE_BASE_URL||'').replace(/\/+$/,''),publicKey:env.LANGFUSE_PUBLIC_KEY||'',secretKey:env.LANGFUSE_SECRET_KEY||'',release:env.LANGFUSE_RELEASE||VERSION},
   };
 }

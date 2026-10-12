@@ -1,8 +1,10 @@
 <p align="center"><img src="public/icons/wordmark.svg" width="280" alt="ASANA Logistics · سامانه لجستیک آسانا"></p>
 
-# سامانه لجستیک آسانا · Asana Logistics — نسخهٔ ۱۵٫۲۴٫۰
+# سامانه لجستیک آسانا · Asana Logistics — نسخهٔ ۱۵٫۲۵٫۰
 
 > **نصب از گیت‌هاب:** برنامهٔ تک‌فایلی (`public/index.html`، حدود ۹ مگابایت) و فایل‌های دودویی (فونت‌ها و آیکون‌ها) در پوشهٔ `bundle/` به‌صورت بخش‌های متنی نگهداری می‌شوند. پس از clone یک‌بار `npm run restore` را اجرا کنید (پیش از `npm start`/`npm test`، در `start.sh`/`start-windows.bat`، Docker و CI به‌طور خودکار اجرا می‌شود؛ صحت فایل‌ها با SHA-256 بررسی می‌شود). کد منبع ماژول‌ها و اسکریپت‌های ساخت در `dev/` است. فایل `.env` (کلید API) در مخزن نیست؛ از `.env.example` نسخه بگیرید.
+
+> **v15.25 · وب زنده (Tavily) و خودکارگردان سرور:** یکپارچگی کامل Tavily (جست‌وجو، استخراج، خزش، نقشهٔ سایت، پژوهش عمیق، مصرف) با سقف اعتبار و ابزارهای عامل؛ خودکارگردان مسیر سمت سرور با زمان‌بندی؛ `server.js` اکنون از `server/src/` ساخته می‌شود (`npm run build:server`). راهنما: [`docs/tavily.md`](docs/tavily.md) · سنجش: `npm run probe:tavily`.
 
 > **v15.24 · رانتایم عامل‌ها (Mastra + Vercel AI SDK + MCP SDK):** sidecar اختیاری در `runtime/` که پرسش تحلیل‌گر (حالت سایه/اصلی)، فرایندها، گردش‌کارهای انسان‌در‌حلقه (استعلام و پرداخت با تأیید و اصل چهار چشم)، ردیابی Langfuse و MCP استاندارد را فراهم می‌کند؛ همهٔ ابزارها همچنان از سیاست سرور (`agCall`) می‌گذرند. پیش‌فرض خاموش است. راهنما: [`docs/runtime-migration.md`](docs/runtime-migration.md) · سنجش مدل: `npm run probe:llm`.
 

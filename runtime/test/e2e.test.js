@@ -33,22 +33,30 @@ const llm=http.createServer((q,r)=>{let b='';q.on('data',d=>b+=d);q.on('end',()=
     r.write('data: '+JSON.stringify({id:'x',object:'chat.completion.chunk',created:1,model:'fake',choices:[{index:0,delta,finish_reason:null}]})+'\n\n');
     r.write('data: '+JSON.stringify({id:'x',object:'chat.completion.chunk',created:1,model:'fake',choices:[{index:0,delta:{},finish_reason:fin}],usage})+'\n\n');return r.end('data: [DONE]\n\n')}
   r.writeHead(200,{'Content-Type':'application/json'});r.end(JSON.stringify({id:'x',object:'chat.completion',created:1,model:'fake',choices:[{index:0,message:msg,finish_reason:fin}],usage}))})});
+/* fake Tavily (research create → in_progress → completed; search for live autopilot news) */
+let TVP=0;const TVLOG=[];const tv=http.createServer((q,r)=>{let b='';q.on('data',d=>b+=d);q.on('end',()=>{const j=JSON.parse(b||'{}');TVLOG.push({u:q.url,auth:q.headers.authorization,b:j});const out=(c,o)=>{r.writeHead(c,{'Content-Type':'application/json'});r.end(JSON.stringify(o))};
+  if(q.headers.authorization!=='Bearer tvly-e2e-key-0123456789')return out(401,{detail:{error:'bad key'}});
+  if(q.url==='/research')return out(201,{request_id:'rs-e2e-1',status:'pending',model:j.model});
+  if(q.url.startsWith('/research/'))return ++TVP<2?out(202,{request_id:'rs-e2e-1',status:'in_progress'}):out(200,{request_id:'rs-e2e-1',status:'completed',content:{answer:'Hormuz transits are limited.',findings:[{point:'Few transits',detail:'Lloyd’s List'}]},sources:[{title:'LL',url:'https://lloydslist.example.com/a'}],usage:{credits:9}});
+  if(q.url==='/search')return out(200,{query:j.query,results:[{title:'Tanker seized near Hormuz',url:'https://news.example.com/t1',content:'seized vessel, shipping disruption',score:0.9,published_date:'2026-10-11'}],usage:{credits:1}});
+  out(404,{})})});
 /* fake Langfuse ingestion */
 const LF=[];const lf=http.createServer((q,r)=>{let b='';q.on('data',d=>b+=d);q.on('end',()=>{LF.push({auth:q.headers.authorization,url:q.url,body:JSON.parse(b||'{}')});r.writeHead(207,{'Content-Type':'application/json'});r.end('{"successes":[],"errors":[]}')})});
 
 let srv,RT,T,FIN;
 const api=async(p,o={},tok)=>{const r=await fetch(B+p,{method:o.method||'GET',headers:{'Content-Type':'application/json',...(tok?{Authorization:'Bearer '+tok}:{}),...(o.headers||{})},body:o.body?JSON.stringify(o.body):undefined});const x=await r.text();let j;try{j=JSON.parse(x)}catch{j=x}return {s:r.status,j}};
 const until=async(f,ms=15000)=>{const t0=Date.now();for(;;){const v=await f();if(v)return v;if(Date.now()-t0>ms)return v;await sleep(150)}};
-const rtEnv=()=>({...process.env,IFA_SERVER_URL:B,IFA_RUNTIME_TOKEN:TOKEN,RT_PORT:String(RTPORT),RT_HOST:'127.0.0.1',RT_DATA:RTDATA,RT_POLL_SEC:'5',
+const rtEnv=()=>({...process.env,IFA_SERVER_URL:B,IFA_RUNTIME_TOKEN:TOKEN,RT_PORT:String(RTPORT),RT_HOST:'127.0.0.1',RT_DATA:RTDATA,RT_POLL_SEC:'5',RT_RESEARCH_POLL_SEC:'0.3',
   RT_LLM_PROVIDER:'openai',RT_LLM_URL:'http://127.0.0.1:'+llm.address().port+'/v1',RT_LLM_MODEL:'fake-tools',RT_LLM_KEY:'k',RT_LLM_LOCAL:'0',RT_LLM_PRICE_IN:'3',RT_LLM_PRICE_OUT:'15',
   IFA_LLM_PROVIDER:'',LANGFUSE_HOST:'http://127.0.0.1:'+lf.address().port,LANGFUSE_PUBLIC_KEY:'pk-lf-test',LANGFUSE_SECRET_KEY:'sk-lf-test'});
 
 test('boot server + runtime',async()=>{
-  const smtpPort=await listen(smtp,0);await listen(llm,0);await listen(lf,0);
+  const smtpPort=await listen(smtp,0);await listen(llm,0);await listen(lf,0);await listen(tv,0);
   RT=await startRuntime(rtEnv());
   const env={...process.env,IFA_PORT:String(PORT),IFA_ENV_FILE:'',IFA_HOST:'127.0.0.1',IFA_DATA:dir,IFA_ADMIN_PASS:PW,IFA_LIVE_OFF:'all',IFA_AG_AUTO:'0',IFA_AG_ALLOW_LOCAL:'1',IFA_DTW_AUTO:'0',
     IFA_SMTP_HOST:'127.0.0.1',IFA_SMTP_PORT:String(smtpPort),IFA_SMTP_SECURE:'0',IFA_SMTP_USER:'u',IFA_SMTP_PASS:'p',IFA_SMTP_FROM:'ops@ifa.test',IFA_SMTP_NOTLS:'1',IFA_PUBLIC_URL:B,
-    IFA_RUNTIME_URL:RB,IFA_RUNTIME_TOKEN:TOKEN,IFA_RUNTIME_MODE:'primary',IFA_RUNTIME_FLOWS:'on',IFA_RUNTIME_AGENTS:'analyst'};
+    IFA_RUNTIME_URL:RB,IFA_RUNTIME_TOKEN:TOKEN,IFA_RUNTIME_MODE:'primary',IFA_RUNTIME_FLOWS:'on',IFA_RUNTIME_AGENTS:'analyst',
+    IFA_TAVILY_KEY:'tvly-e2e-key-0123456789',IFA_TAVILY_BASE:'http://127.0.0.1:'+tv.address().port,IFA_TAVILY_POLL_SEC:'1'};
   delete env.IFA_LLM_PROVIDER;
   srv=spawn(process.execPath,['--experimental-sqlite','--no-warnings',path.join(ROOT,'server.js')],{env,stdio:['ignore','ignore','inherit']});
   for(let i=0;i<80;i++){try{await fetch(B+'/api/health');break}catch{await sleep(200)}}
@@ -62,7 +70,7 @@ test('boot server + runtime',async()=>{
 });
 
 test('health + status + bridge auth',async()=>{
-  const h=await (await fetch(RB+'/healthz')).json();assert.equal(h.ok,true);assert.equal(h.engine,'mastra');assert.deepEqual(h.workflows,['procurement-rfq','finance-payment']);assert.equal(h.langfuse.enabled,true);
+  const h=await (await fetch(RB+'/healthz')).json();assert.equal(h.ok,true);assert.equal(h.engine,'mastra');assert.deepEqual(h.workflows,['procurement-rfq','finance-payment','deep-research','lane-autopilot']);assert.equal(h.langfuse.enabled,true);
   const s=await api('/api/runtime/status',{},T);assert.equal(s.s,200);assert.equal(s.j.mode,'primary');assert.equal(s.j.health.ok,true);assert.equal(s.j.flows,true);
   assert.equal((await api('/api/runtime/agents')).s,401,'no token → 401');
   assert.equal((await api('/api/runtime/agents',{headers:{'X-IFA-Runtime-Token':'wrong-token-wrong-token-xx'}})).s,401,'wrong token → 401');
@@ -141,10 +149,26 @@ test('phase 6: MCP (official SDK, Streamable HTTP) with ifa_mcp_ keys',async()=>
   const bad=new Client({name:'bad',version:'1'});await assert.rejects(bad.connect(new StreamableHTTPClientTransport(new URL(RB+'/mcp'),{requestInit:{headers:{Authorization:'Bearer ifa_mcp_nope'}}})));
 });
 
+test('phase 8: deep-research workflow — Tavily Research job polled to completion, memory + task closed',async()=>{
+  const r=await api('/api/runtime/workflows/deep-research/start',{method:'POST',body:{input:{q:'Status of container shipping through the Strait of Hormuz',model:'mini'}}},T);
+  assert.equal(r.s,200,JSON.stringify(r.j));
+  const run=await until(async()=>{const x=(await api('/api/runtime/runs/'+r.j.runId,{},T)).j;return x&&x.status==='success'&&x},20000);
+  assert.ok(run,'run did not finish');assert.equal(run.result.outcome,'done');assert.match(run.result.answer,/Hormuz/);assert.equal(run.result.sources[0].url,'https://lloydslist.example.com/a');
+  assert.ok(TVLOG.some(x=>x.u==='/research'&&x.b.model==='mini'&&x.b.output_schema));
+  const tk=(await api('/api/agents/tasks/'+run.result.task,{},T)).j;assert.equal(tk.status,'done');
+});
+
+test('phase 8: lane-autopilot workflow — server autopilot with live Tavily news',async()=>{
+  const r=await api('/api/runtime/workflows/lane-autopilot/start',{method:'POST',body:{input:{pol:'Ningbo',dest:'Tehran',eq:'40HC',value:50000,web:true}}},T);
+  assert.equal(r.s,200,JSON.stringify(r.j));assert.equal(r.j.status,'success',JSON.stringify(r.j));
+  assert.ok(r.j.result.decision&&r.j.result.decision.rec,'no recommendation');assert.ok(TVLOG.some(x=>x.u==='/search'&&x.b.topic==='news'));
+  const ap=(await api('/api/ap/runs?mode=server',{},T)).j;assert.ok(ap.runs.some(x=>x.id===r.j.result.run));
+});
+
 test('kill switch blocks runtime',async()=>{
   await api('/api/agents/kill',{method:'POST',body:{on:true}},T);
   const r=await api('/api/runtime/workflows/finance-payment/start',{method:'POST',body:{input:{vendor:'X',amount:1,cur:'USD',ref:'K'}}},T);assert.equal(r.s,423);
   await api('/api/agents/kill',{method:'POST',body:{on:false}},T);
 });
 
-after(async()=>{try{srv&&srv.kill('SIGTERM')}catch{}try{await RT?.close()}catch{}smtp.close();llm.close();lf.close();await sleep(300);fs.rmSync(dir,{recursive:true,force:true})});
+after(async()=>{try{srv&&srv.kill('SIGTERM')}catch{}try{await RT?.close()}catch{}smtp.close();llm.close();lf.close();tv.close();await sleep(300);fs.rmSync(dir,{recursive:true,force:true})});

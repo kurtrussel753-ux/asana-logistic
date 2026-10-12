@@ -1,0 +1,112 @@
+{
+ "_": "server.js is generated: concatenation of these parts in order (file = verbatim; module = dev/src module without trailing whitespace + after; markers = wrapped in /* >>> name */ … /* <<< name */). Edit the sources, then run npm run build:server.",
+ "output": "server.js",
+ "parts": [
+  {
+   "file": "server/src/010-core-db-auth-http.js"
+  },
+  {
+   "file": "server/src/020-einvoice-portal-router.js"
+  },
+  {
+   "file": "server/src/030-live-fx-roads-sanctions.js"
+  },
+  {
+   "file": "server/src/040-live-holidays-smtp-rfq.js"
+  },
+  {
+   "file": "server/src/050-market-report-quotes-inbox.js"
+  },
+  {
+   "module": "dev/src/p5/a_core.js",
+   "after": "\n"
+  },
+  {
+   "module": "dev/src/p5/b_domain.js",
+   "after": "\n"
+  },
+  {
+   "module": "dev/src/p5/c_ops.js",
+   "after": "\n"
+  },
+  {
+   "module": "dev/src/p5/d_tools.js",
+   "after": "\n"
+  },
+  {
+   "module": "dev/src/p5/e_agents.js",
+   "after": "\n"
+  },
+  {
+   "module": "dev/src/p5/f_orch.js",
+   "after": "\n"
+  },
+  {
+   "module": "dev/src/p5/g_ai.js",
+   "after": "\n"
+  },
+  {
+   "module": "dev/src/p5/h_open.js",
+   "after": "\n"
+  },
+  {
+   "module": "dev/src/shared/calc.js",
+   "after": "\n"
+  },
+  {
+   "module": "dev/src/p5/i_flow.js",
+   "after": "\n"
+  },
+  {
+   "module": "dev/src/p5/j_conn.js",
+   "after": "\n"
+  },
+  {
+   "module": "dev/src/shared/inv.js",
+   "after": "\n"
+  },
+  {
+   "module": "dev/src/p5/k_actual.js",
+   "after": "\n"
+  },
+  {
+   "module": "dev/src/p5/l_iran.js",
+   "after": "\n"
+  },
+  {
+   "module": "dev/src/p5/m_aprun.js",
+   "after": "\n"
+  },
+  {
+   "module": "dev/src/p5/n_plan.js",
+   "after": "\n"
+  },
+  {
+   "module": "dev/src/p5/o_web.js",
+   "after": "\n"
+  },
+  {
+   "module": "dev/src/p5/p_web2.js",
+   "after": "\n"
+  },
+  {
+   "module": "dev/src/p5/q_web3.js",
+   "after": "\n\n"
+  },
+  {
+   "module": "dev/src/p5/r_runtime.js",
+   "markers": true
+  },
+  {
+   "module": "dev/src/p5/s_tavily.js",
+   "markers": true
+  },
+  {
+   "module": "dev/src/p5/t_apsrv.js",
+   "markers": true
+  },
+  {
+   "file": "server/src/900-http-server-static.js"
+  }
+ ]
+}
