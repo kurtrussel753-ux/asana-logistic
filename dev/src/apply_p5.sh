@@ -1,5 +1,5 @@
 set -e
-cd /data/atlas/src/p5 && cat a_core.js b_domain.js c_ops.js d_tools.js e_agents.js f_orch.js g_ai.js h_open.js ../shared/calc.js i_flow.js j_conn.js ../shared/inv.js k_actual.js l_iran.js m_aprun.js n_plan.js o_web.js p_web2.js q_web3.js > ../p5.js
+cd /data/atlas/src/p5 && cat a_core.js b_domain.js c_ops.js d_tools.js e_agents.js f_orch.js g_ai.js h_open.js ../shared/calc.js i_flow.js j_conn.js ../shared/inv.js k_actual.js l_iran.js m_aprun.js n_plan.js o_web.js p_web2.js q_web3.js r_runtime.js > ../p5.js
 cd /data/atlas && cp src/server.v158.js ifa/server.js && python3 - <<'P'
 p='/data/atlas/ifa/server.js';s=open(p,encoding='utf8').read()
 m=open('/data/atlas/src/p5.js',encoding='utf8').read()
@@ -11,7 +11,7 @@ envl='''/* ---------- optional .env next to server.js (never served; real enviro
 c='const CFG_FILE='
 assert s.count(c)==1
 s=s.replace(c,envl+c)
-s=s.replace("const VERSION='1.7.0';","const VERSION='1.17.0';")
+s=s.replace("const VERSION='1.7.0';","const VERSION='1.18.0';")
 b=" if(!p.startsWith('/api/')){if(serveStatic"
 s=s.replace(b," if(p==='/mcp'&&req.method==='POST')return await mcpHandle(req,res);\n"+b)
 s=s.replace("market:MKTP,p3:P3,p4:P4};","market:MKTP,p3:P3,p4:P4,p5:P5};")

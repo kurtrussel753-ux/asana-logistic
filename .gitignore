@@ -7,3 +7,7 @@ public/index.html
 public/fonts/*.woff2
 public/icons/*.png
 public/favicon.ico
+
+# agent runtime (v15.24)
+runtime/node_modules/
+runtime/data/

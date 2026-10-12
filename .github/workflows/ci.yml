@@ -13,4 +13,24 @@ jobs:
           node-version: ${{ matrix.node }}
       - run: node scripts/restore.js
       - run: node --check server.js
+      - name: build artefacts in sync (bridge module, runtime guards, embedded server copy)
+        run: npm run check:build
       - run: npm test
+  runtime:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        node: [22, 24]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+          cache: npm
+          cache-dependency-path: runtime/package-lock.json
+      - run: node scripts/restore.js
+      - run: npm ci --no-audit --no-fund
+        working-directory: runtime
+      - name: e2e — server bridge + Mastra runtime + MCP SDK (fake model, no network)
+        run: npm test
+        working-directory: runtime

@@ -1,8 +1,10 @@
 <p align="center"><img src="public/icons/wordmark.svg" width="280" alt="ASANA Logistics · سامانه لجستیک آسانا"></p>
 
-# سامانه لجستیک آسانا · Asana Logistics — نسخهٔ ۱۵٫۲۳٫۰
+# سامانه لجستیک آسانا · Asana Logistics — نسخهٔ ۱۵٫۲۴٫۰
 
 > **نصب از گیت‌هاب:** برنامهٔ تک‌فایلی (`public/index.html`، حدود ۹ مگابایت) و فایل‌های دودویی (فونت‌ها و آیکون‌ها) در پوشهٔ `bundle/` به‌صورت بخش‌های متنی نگهداری می‌شوند. پس از clone یک‌بار `npm run restore` را اجرا کنید (پیش از `npm start`/`npm test`، در `start.sh`/`start-windows.bat`، Docker و CI به‌طور خودکار اجرا می‌شود؛ صحت فایل‌ها با SHA-256 بررسی می‌شود). کد منبع ماژول‌ها و اسکریپت‌های ساخت در `dev/` است. فایل `.env` (کلید API) در مخزن نیست؛ از `.env.example` نسخه بگیرید.
+
+> **v15.24 · رانتایم عامل‌ها (Mastra + Vercel AI SDK + MCP SDK):** sidecar اختیاری در `runtime/` که پرسش تحلیل‌گر (حالت سایه/اصلی)، فرایندها، گردش‌کارهای انسان‌در‌حلقه (استعلام و پرداخت با تأیید و اصل چهار چشم)، ردیابی Langfuse و MCP استاندارد را فراهم می‌کند؛ همهٔ ابزارها همچنان از سیاست سرور (`agCall`) می‌گذرند. پیش‌فرض خاموش است. راهنما: [`docs/runtime-migration.md`](docs/runtime-migration.md) · سنجش مدل: `npm run probe:llm`.
 
 > نام پیشین: «اطلس باربری ایران». از v15.9.2 نام سامانه «سامانه لجستیک آسانا» است و لوگوی آسانا در سربرگ، صفحهٔ آغاز، آیکون اپ (PWA)، favicon، گزارش‌ها و صفحه‌های پرتال/استعلام به کار رفته است. فایل‌های لوگو: `public/icons/` (`asana-mark.svg` نشانهٔ بُرداری بدون زمینه، `icon.svg`، آیکون‌های ۱۹۲/۵۱۲، نسخه‌های maskable، `apple-touch-icon.png`، `favicon.ico`).
 
@@ -19,6 +21,9 @@ config.example.json    نمونهٔ تنظیمات ← به config.json تغیی
 Dockerfile, docker-compose.yml, ifa.service, Caddyfile, start.sh, start-windows.bat
 test/smoke.js          آزمون خودکار کل API
 test/agents.test.js    آزمون عامل‌ها و سناریوهای ایمنی (مدل، SMTP و خبر جعلی؛ بدون شبکه)
+test/runtime.bridge.test.js  آزمون پل رانتایم (سایه، بازگشت خودکار، احراز)
+runtime/               رانتایم عامل‌ها (Mastra · AI SDK · MCP SDK) — docs/runtime-migration.md
+deploy/litellm/        پیکربندی دروازهٔ مدل LiteLLM
 ```
 
 ## اجرا

@@ -3,3 +3,5 @@ data
 .git
 test
 *.zip
+runtime
+deploy

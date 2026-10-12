@@ -1,7 +1,7 @@
 services:
   ifa:
     build: .
-    image: asana-logistics:15.9
+    image: asana-logistics:15.24
     restart: unless-stopped
     ports:
       - "8080:8080"
@@ -13,6 +13,12 @@ services:
         required: false
     environment:
       - IFA_PUBLIC_URL=http://localhost:8080
+      # --- رانتایم عامل‌ها (v15.24 · Mastra + Vercel AI SDK) — پیش‌فرض خاموش؛ ببینید docs/runtime-migration.md
+      - IFA_RUNTIME_URL=${IFA_RUNTIME_URL:-http://runtime:8090}
+      - IFA_RUNTIME_TOKEN=${IFA_RUNTIME_TOKEN:-}
+      - IFA_RUNTIME_MODE=${IFA_RUNTIME_MODE:-off}       # off | shadow | primary
+      - IFA_RUNTIME_AGENTS=${IFA_RUNTIME_AGENTS:-analyst}
+      - IFA_RUNTIME_FLOWS=${IFA_RUNTIME_FLOWS:-off}     # on = اجرای فرایندها روی موتور گردش‌کار رانتایم
       # - IFA_AUTH=open          # بدون رمز (پیش‌فرض)؛ password = ورود با رمز
       # - IFA_OPEN_SCOPE=lan     # توجه: در Docker همهٔ درخواست‌ها از آدرس داخلی شبکهٔ Docker می‌آیند؛ اگر پورت روی اینترنت باز است IFA_AUTH=password بگذارید
       # - IFA_ADMIN_PASS=change-me-now
@@ -32,5 +38,69 @@ services:
       # - IFA_ORS_KEY=              # مسیریابی کامیون (OpenRouteService)
       # - IFA_OSRM_URL=             # سرور OSRM داخلی
       # - IFA_LIVE_OFF=             # مثلاً weather,sanctions
+
+  # رانتایم عامل‌ها (sidecar). فقط در شبکهٔ داخلی Docker در دسترس است؛ پورت MCP را در صورت نیاز باز کنید.
+  runtime:
+    build: ./runtime
+    image: asana-agent-runtime:0.1
+    restart: unless-stopped
+    profiles: ["runtime"]
+    depends_on: [ifa]
+    volumes:
+      - runtime-data:/data
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      - IFA_SERVER_URL=http://ifa:8080
+      - IFA_RUNTIME_TOKEN=${IFA_RUNTIME_TOKEN:-}
+      - RT_DATA=/data
+      - RT_PORT=8090
+      # - LITELLM_URL=http://litellm:4000      # همهٔ مدل‌ها از راه دروازهٔ LiteLLM
+      # - LITELLM_MODEL=ifa-default
+      # - LANGFUSE_HOST=http://langfuse:3000   # یا https://cloud.langfuse.com
+      # - LANGFUSE_PUBLIC_KEY=
+      # - LANGFUSE_SECRET_KEY=
+    # ports: ["8090:8090"]   # فقط اگر کلاینت MCP بیرونی به /mcp رانتایم وصل می‌شود
+
+  # فاز ۰ — دروازهٔ مدل (OpenAI-compatible با فراخوانی بومی ابزار، failover، سقف هزینه)
+  litellm:
+    image: ghcr.io/berriai/litellm:main-stable
+    restart: unless-stopped
+    profiles: ["gateway"]
+    command: ["--config", "/app/config.yaml", "--port", "4000"]
+    volumes:
+      - ./deploy/litellm/config.yaml:/app/config.yaml:ro
+    env_file:
+      - path: .env
+        required: false
+
+  # فاز ۲ — Langfuse خودمیزبان (نسخهٔ ۲، فقط Postgres). برای تولید Langfuse Cloud یا نسخهٔ ۳ را هم می‌توان به کار برد.
+  langfuse:
+    image: langfuse/langfuse:2
+    restart: unless-stopped
+    profiles: ["observability"]
+    depends_on: [langfuse-db]
+    ports:
+      - "3000:3000"
+    environment:
+      - DATABASE_URL=postgresql://langfuse:langfuse@langfuse-db:5432/langfuse
+      - NEXTAUTH_URL=http://localhost:3000
+      - NEXTAUTH_SECRET=${LANGFUSE_NEXTAUTH_SECRET:-change-me}
+      - SALT=${LANGFUSE_SALT:-change-me}
+      - TELEMETRY_ENABLED=false
+  langfuse-db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    profiles: ["observability"]
+    environment:
+      - POSTGRES_USER=langfuse
+      - POSTGRES_PASSWORD=langfuse
+      - POSTGRES_DB=langfuse
+    volumes:
+      - langfuse-db:/var/lib/postgresql/data
+
 volumes:
   ifa-data:
+  runtime-data:
+  langfuse-db:

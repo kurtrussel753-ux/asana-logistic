@@ -1,0 +1,32 @@
+# Phase 0 — LiteLLM gateway: one OpenAI-compatible endpoint (native tool calling) in front of every provider.
+# Server (legacy path) and runtime both point at it:  IFA_LLM_PROVIDER=openai  IFA_LLM_URL=http://litellm:4000/v1  IFA_LLM_MODEL=ifa-default
+#                                                       (runtime: LITELLM_URL=http://litellm:4000  LITELLM_MODEL=ifa-default)
+# Keys live only in the gateway's environment (.env → ANTHROPIC_API_KEY / OPENAI_API_KEY / OPENROUTER_API_KEY).
+model_list:
+  - model_name: ifa-default            # primary: strong tool-calling model
+    litellm_params:
+      model: anthropic/claude-sonnet-4-5
+      api_key: os.environ/ANTHROPIC_API_KEY
+  - model_name: ifa-default            # same alias → automatic load-balancing / failover
+    litellm_params:
+      model: openai/gpt-4o-mini
+      api_key: os.environ/OPENAI_API_KEY
+  - model_name: ifa-cheap              # summaries in flows (llm steps)
+    litellm_params:
+      model: openai/gpt-4o-mini
+      api_key: os.environ/OPENAI_API_KEY
+  - model_name: ifa-local              # sensitive data, never leaves the network (set IFA_LLM_LOCAL=1 / RT_LLM_LOCAL=1 when using it)
+    litellm_params:
+      model: ollama_chat/qwen2.5:14b
+      api_base: http://ollama:11434
+router_settings:
+  routing_strategy: simple-shuffle
+  num_retries: 2
+  timeout: 120
+  fallbacks: [{"ifa-default": ["ifa-cheap"]}]
+litellm_settings:
+  drop_params: true                    # drop provider-unsupported params instead of failing
+  request_timeout: 120
+  # success_callback: ["langfuse"]     # optional: gateway-level traces (LANGFUSE_* env)
+general_settings:
+  master_key: os.environ/LITELLM_MASTER_KEY
