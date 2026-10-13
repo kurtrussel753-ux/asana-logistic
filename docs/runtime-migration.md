@@ -27,7 +27,7 @@
 
 ### تصمیم‌های معماری (به‌روزشده در v15.25)
 - **خودکارگردان (autopilot)** اکنون سمت سرور هم اجرا می‌شود (`t_apsrv.js`): مقایسهٔ مسیر، نرخ‌ها، ارز و خبرهای ثبت‌شده/زندهٔ Tavily → `ap_runs` با `mode=server`، ثبت در حافظهٔ سازمانی و رویداد `autopilot.done`؛ زمان‌بندی هر مسیر (`GET/PUT /api/ap/lanes`)، ابزار عامل `autopilot_run` و گردش‌کار `lane-autopilot`.
-- **`server.js` شکسته شد:** منبع در `server/src/*.js` + ماژول‌های `dev/src/p5/` با ترتیب `server/manifest.json` است و `scripts/build-server.js` آن‌ها را بایت‌به‌بایت به `server.js` تبدیل می‌کند (`--check` در CI). `scripts/inject-module.js` دیگر استفاده نمی‌شود.
+- **`server.js` شکسته شد:** منبع در `server/src/*.js` + ماژول‌های `dev/src/p5/` با ترتیب `server/manifest.json` است و `scripts/build-server.js` آن‌ها را بایت‌به‌بایت به `server.js` تبدیل می‌کند (`--check` در CI). `scripts/inject-module.js` قدیمی حذف شد؛ فقط مسیر build جدید استفاده می‌شود.
 - **Temporal/DBOS لازم نشد:** Mastra + LibSQL پایداری snapshot و ادامه پس از راه‌اندازی دوباره را فراهم می‌کند (آزموده‌شده، از جمله poll چندساعتهٔ پژوهش). اگر هزاران اجرای چندروزه لازم شد، Temporal گام بعدی است.
 - **mem0/Graphiti جایگزین شد** با حافظهٔ سازمانی سرور (`ag_mem` / `memory_search`) که اکنون از نتایج پژوهش Tavily و اجراهای خودکارگردان تغذیه می‌شود؛ بدون سرویس اضافه و زیر همان کنترل دسترسی.
 - مدل‌ها و Tavily واقعی در CI عادی آزموده نمی‌شوند (مدل/Tavily جعلی)؛ کار `live` در CI با `workflow_dispatch` (ورودی `live`) و secrets (`TAVILY_API_KEY`، `LLM_*`) `probe:tavily` و `probe:llm` را اجرا می‌کند. پیش از `primary` حتماً `shadow` را اجرا کنید.
@@ -82,3 +82,9 @@ IFA_RUNTIME_URL=http://127.0.0.1:8090 IFA_RUNTIME_MODE=shadow npm start
 ## نگهداری
 - کد سرور را در `server/src/*.js` یا `dev/src/p5/*.js` ویرایش کنید (نه مستقیم `server.js`)، سپس `npm run build:server` (ساخت `server.js` از manifest، تولید `runtime/src/legacy.gen.js` از توابع نگهبان سرور، و بازجاسازی `server.js` و ماژول‌های کلاینت در `index.html` با بازنویسی فقط بخش‌های تغییرکردهٔ `bundle/`).
 - `npm run check:build` در CI همگامی همهٔ این‌ها را بررسی می‌کند.
+
+## استقرار امن
+برای محیط تولید از فایل مستقل `deploy/compose.production.yml` و چک‌لیست [`production-readiness.md`](production-readiness.md) استفاده کنید. compose اصلی برای توسعه/آزمایش نگه داشته شده است؛ نمونه‌های رمز پیش‌فرض آن برای تولید مناسب نیستند.
+
+## مجوز گردش‌کارهای MCP
+شروع گردش‌کار، مجوز همهٔ ابزارهای موردنیاز آن (حتی ابزارهای اختیاری) را از نقش درخواست‌دهنده و فهرست مجاز کلید MCP بررسی می‌کند؛ داشتن ابزار `workflow_start` به‌تنهایی مجوز عمومی نیست. کلید viewer اجازهٔ شروع ندارد. ابزار `workflow_status` فقط اجراهای همان هویت MCP را برمی‌گرداند؛ نقش admin استثناست. پراکسی HTTP آغاز گردش‌کار نیز نقش کاربر آغازکننده را پیش از ساخت اجرا بررسی می‌کند.

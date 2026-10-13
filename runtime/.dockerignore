@@ -2,3 +2,7 @@ node_modules
 data
 test
 evals
+
+# Never package or commit deployment credentials
+.env*
+!.env.example

@@ -11,3 +11,7 @@ public/favicon.ico
 # agent runtime (v15.24)
 runtime/node_modules/
 runtime/data/
+
+# Never package or commit deployment credentials
+.env*
+!.env.example

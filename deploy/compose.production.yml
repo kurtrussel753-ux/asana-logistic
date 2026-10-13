@@ -1,0 +1,49 @@
+# Standalone production candidate. Run from repository root:
+# docker compose --env-file .env.production -f deploy/compose.production.yml config --quiet
+# docker compose --env-file .env.production -f deploy/compose.production.yml up -d --build
+# Both services stay behind a host-side HTTPS reverse proxy; runtime has no published port.
+services:
+  ifa:
+    build:
+      context: ..
+    image: asana-logistics:15.25
+    restart: unless-stopped
+    ports: ["127.0.0.1:8080:8080"]
+    env_file: ../.env.production
+    environment:
+      IFA_AUTH: password
+      IFA_ADMIN_PASS: ${IFA_ADMIN_PASS:?Set a strong admin password}
+      IFA_PUBLIC_URL: ${IFA_PUBLIC_URL:?Set the public HTTPS URL}
+      IFA_RUNTIME_URL: http://runtime:8090
+      IFA_RUNTIME_TOKEN: ${IFA_RUNTIME_TOKEN:?Set a random shared runtime token}
+      IFA_RUNTIME_MODE: ${IFA_RUNTIME_MODE:-shadow}
+      IFA_RUNTIME_FLOWS: ${IFA_RUNTIME_FLOWS:-off}
+    volumes: ["ifa-data:/data"]
+    security_opt: ["no-new-privileges:true"]
+    cap_drop: [ALL]
+    logging:
+      driver: json-file
+      options: {max-size: "10m", max-file: "3"}
+  runtime:
+    build:
+      context: ../runtime
+    image: asana-agent-runtime:0.1
+    restart: unless-stopped
+    depends_on:
+      ifa:
+        condition: service_healthy
+    env_file: ../.env.production
+    environment:
+      IFA_SERVER_URL: http://ifa:8080
+      IFA_RUNTIME_TOKEN: ${IFA_RUNTIME_TOKEN:?Set a random shared runtime token}
+      RT_DATA: /data
+      RT_PORT: "8090"
+    volumes: ["runtime-data:/data"]
+    security_opt: ["no-new-privileges:true"]
+    cap_drop: [ALL]
+    logging:
+      driver: json-file
+      options: {max-size: "10m", max-file: "3"}
+volumes:
+  ifa-data:
+  runtime-data:

@@ -7,8 +7,8 @@ const RTC=()=>{const e=process.env;const url=String(e.IFA_RUNTIME_URL||'').trim(
  const mode=ready&&['shadow','primary'].includes(e.IFA_RUNTIME_MODE)?e.IFA_RUNTIME_MODE:'off';
  return {url,token,ready,mode,agents:String(e.IFA_RUNTIME_AGENTS||'analyst').split(',').map(s=>s.trim()).filter(Boolean),flows:ready&&e.IFA_RUNTIME_FLOWS==='on',
   timeout:Math.max(5,+e.IFA_RUNTIME_TIMEOUT_SEC||120)*1000,shadowPct:Math.max(0,Math.min(100,e.IFA_RUNTIME_SHADOW_PCT==null?100:+e.IFA_RUNTIME_SHADOW_PCT||0))}};
-function rtAuth(req){const C=RTC();const t=String(req.headers['x-ifa-runtime-token']||'');
- if(!C.ready||t.length!==C.token.length||!crypto.timingSafeEqual(Buffer.from(t),Buffer.from(C.token)))throw E(401,'توکن رانتایم نامعتبر است (IFA_RUNTIME_TOKEN)');return C}
+function rtAuth(req){const C=RTC();const t=Buffer.from(String(req.headers['x-ifa-runtime-token']||'')),expected=Buffer.from(C.token);
+ if(!C.ready||t.length!==expected.length||!crypto.timingSafeEqual(t,expected))throw E(401,'توکن رانتایم نامعتبر است (IFA_RUNTIME_TOKEN)');return C}
 async function rtFetch(p,b,o={}){const C=RTC();if(!C.ready)throw new Error('رانتایم پیکربندی نشده است (IFA_RUNTIME_URL / IFA_RUNTIME_TOKEN)');const ac=new AbortController();const tm=setTimeout(()=>ac.abort(),o.timeout||C.timeout);
  try{const r=await fetch(C.url+p,{method:o.method||(b===undefined?'GET':'POST'),headers:{'Content-Type':'application/json',Authorization:'Bearer '+C.token},body:b===undefined?undefined:JSON.stringify(b),signal:ac.signal});
   const x=await r.text();let j;try{j=JSON.parse(x)}catch(e){j={raw:x.slice(0,300)}}if(!r.ok)throw Object.assign(new Error(String((j&&j.error)||('runtime HTTP '+r.status)).slice(0,300)),{status:r.status,body:j});return j}
@@ -55,8 +55,16 @@ route('POST','/api/runtime/tasks/:id/close',async(req,u,P)=>{rtAuth(req);const b
  const R=rtTaskFin(T.id,st,{out,src,flags:{tainted:!!c.tainted,inj:[...new Set(c.inj||[])].slice(0,10),denied:c.denied||0,approvals:c.approvals||[],engine:'runtime',workflow:b.workflow||null,run:b.run||null},cost:c.cost||T.cost,tokens:c.tokens||T.tokens,calls:c.steps||T.calls,model:c.model||null,err:b.err?String(b.err).slice(0,500):null,tainted:c.tainted});
  if(b.ctx)rtCtxClose(b.ctx);const ag=AGENTS[T.agent];const summ=String(out.summary||out.answer||'');if(st==='done'){memAdd('task',String(T.id),ag.n+' · '+T.title,summ,ag.id);_fire0('agent.done',{ref:'#'+T.id,agent:ag.n,kind:T.title,summary:summ.slice(0,400)},'agd|'+T.id)}return {task:R.id,status:R.status}});
 route('GET','/api/runtime/approvals/:id',(req,u,P)=>{rtAuth(req);const a=q1('SELECT * FROM ag_appr WHERE id=?',+P.id);if(!a)throw E(404,'مورد تأیید یافت نشد');const p=apPub(a);return {id:p.id,task:p.task,agent:p.agent,tool:p.tool,cls:p.cls,status:p.status,decided_by:p.decided_by,decided_at:p.decided_at,note:p.note,result:p.result,expires:p.expires}});
+// Workflow wrappers must not bypass the initiating user's role or an MCP key's tool whitelist.
+const RTWFTOOLS={
+ 'procurement-rfq':['rfq_draft','rates_search','partners_list','sanctions_screen','rfq_send','team_notify'],
+ 'finance-payment':['fx_get','invoice_reconcile','payment_request'],
+ 'deep-research':['tavily_research','tavily_research_get','team_notify'],
+ 'lane-autopilot':['autopilot_run','team_notify']};
+function rtWorkflowsFor(id){const actor={username:id.who,role:id.role};if(!can(actor,'agents.use')||id.level<1)return [];
+ return Object.entries(RTWFTOOLS).filter(([wf,names])=>names.every(n=>{const t=TOOLS[n];return t&&(!id.tools||id.tools.includes(n))&&(!t.perm||can(actor,t.perm))&&(t.keys||[]).every(k=>canKey(actor,k))})).map(([wf])=>wf)}
 route('POST','/api/runtime/mcp-auth',async req=>{rtAuth(req);const b=await body(req);const id=mcpIdentity({headers:{authorization:String(b.authorization||'')}});if(!id)throw E(401,'Unauthorized');const ag=mcpAgent(id);
- const ctx={ag,actor:{id:0,username:id.who,role:id.role,name:id.who},sources:[],steps:0,inj:[],approvals:[],by:id.who};return {who:id.who,role:id.role,level:id.level,ctx:rtCtxOpen(ctx,{ttl:10*60e3}),tools:ag.tools.map(rtToolPub).filter(Boolean)}});
+ const ctx={ag,actor:{id:0,username:id.who,role:id.role,name:id.who},sources:[],steps:0,inj:[],approvals:[],by:id.who};return {who:id.who,role:id.role,level:id.level,workflows:rtWorkflowsFor(id),ctx:rtCtxOpen(ctx,{ttl:10*60e3}),tools:ag.tools.map(rtToolPub).filter(Boolean)}});
 /* --- runtime-backed ask (phase 3): grounding is re-checked here against the tool results the server itself returned --- */
 async function rtAsk(ctx,qs,o={}){const id=rtCtxOpen(ctx,{ro:true,ttl:10*60e3});const n0=ctx.rtObs.length;const t0=Date.now();
  try{const r=await rtFetch('/v1/agents/'+encodeURIComponent(ctx.ag.id)+'/ask',{ctx:id,task:ctx.task||null,question:String(qs).slice(0,4000),by:ctx.by||null});
@@ -98,7 +106,7 @@ function rtShadowStats(){const r=q1('SELECT COUNT(*) n,AVG(agree) agree,AVG(rt_g
 route('GET','/api/runtime/status',async()=>{const C=RTC();const h=C.ready?await rtHealth(true):null;return {mode:C.mode,configured:C.ready,agents:C.agents,flows:C.flows,shadowPct:C.shadowPct,health:h,shadow:rtShadowStats()}},'agents.use');
 route('GET','/api/runtime/shadow',()=>({stats:rtShadowStats(),rows:q('SELECT * FROM rt_shadow ORDER BY id DESC LIMIT 100')}),'agents.admin');
 route('GET','/api/runtime/workflows',async()=>{if(!RTC().ready)throw E(503,'رانتایم پیکربندی نشده است');return rtFetch('/v1/workflows')},'agents.use');
-route('POST','/api/runtime/workflows/:wf/start',async(req,u,P)=>{if(!RTC().ready)throw E(503,'رانتایم پیکربندی نشده است');const b=await body(req);if(agCfg().kill)throw E(423,'کلید توقف اضطراری فعال است');
+route('POST','/api/runtime/workflows/:wf/start',async(req,u,P)=>{if(!RTC().ready)throw E(503,'رانتایم پیکربندی نشده است');const b=await body(req);if(agCfg().kill)throw E(423,'کلید توقف اضطراری فعال است');if(!RTWFTOOLS[P.wf])throw E(404,'گردش‌کار ناشناخته');if(!rtWorkflowsFor({who:u.username,role:u.role,level:1,tools:null}).includes(P.wf))throw E(403,'مجوز ابزارهای این گردش‌کار را ندارید');
  const r=await rtFetch('/v1/workflows/'+encodeURIComponent(P.wf)+'/start',{by:u.username,role:u.role,input:b.input&&typeof b.input==='object'?b.input:b});audit(u.username,ipOf(req),'runtime.workflow.start','workflow',P.wf,{run:r.runId||null,status:r.status||null});return r},'agents.use');
 route('GET','/api/runtime/runs',async()=>{if(!RTC().ready)throw E(503,'رانتایم پیکربندی نشده است');return rtFetch('/v1/runs')},'agents.use');
 route('GET','/api/runtime/runs/:id',async(req,u,P)=>{if(!RTC().ready)throw E(503,'رانتایم پیکربندی نشده است');return rtFetch('/v1/runs/'+encodeURIComponent(P.id))},'agents.use');

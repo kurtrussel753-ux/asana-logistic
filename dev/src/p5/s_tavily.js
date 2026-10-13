@@ -5,24 +5,30 @@
    web USD budget → retry on 429/5xx → usage row in web_usage (svc 'tv', units = Tavily credits) → content is untrusted (injection scan).
    ===================================================================== */
 db.exec(`CREATE TABLE IF NOT EXISTS tv_watch(id INTEGER PRIMARY KEY,name TEXT,query TEXT,kind TEXT,topic TEXT,days INTEGER,every INTEGER,depth TEXT,domains TEXT,xdomains TEXT,country TEXT,active INTEGER,last INTEGER,runs INTEGER,hits INTEGER,err TEXT,ts INTEGER,by TEXT);`);
+// Research reservations survive restarts; ordinary HTTP calls reserve synchronously until their usage row is written.
+db.exec(`CREATE TABLE IF NOT EXISTS tv_reservations(job INTEGER PRIMARY KEY,credits REAL NOT NULL);`);
+const TVINFLIGHT=new Map();
 Object.assign(WB0,{tvCredit:0.008,tvDayCredits:200,tvMonthCredits:1500,tvAgentDayCredits:60,tvResearchModel:'auto'});
 WBN.tv='Tavily';
 const TVB=()=>String(process.env.IFA_TAVILY_BASE||'https://api.tavily.com').replace(/\/+$/,'');
 const tvKey=()=>process.env.IFA_TAVILY_KEY||wbSecret('tv');
 const tvKeySrc=()=>process.env.IFA_TAVILY_KEY?'env':wbSecret('tv')?'db':'';
 const tvOff=()=>process.env.IFA_WEB_OFF==='1'||process.env.IFA_TAVILY_OFF==='1'||(/(^|,)(all|web|tavily)(,|$)/.test(String(process.env.IFA_LIVE_OFF||''))&&!process.env.IFA_TAVILY_BASE);
-const tvCfg=()=>{const c=wbCfg(),e=process.env;const n=(k,d)=>+e[k]>0?+e[k]:d;return {...c,tvCredit:n('IFA_TAVILY_CREDIT_USD',c.tvCredit),tvDayCredits:n('IFA_TAVILY_DAY_CREDITS',c.tvDayCredits),tvMonthCredits:n('IFA_TAVILY_MONTH_CREDITS',c.tvMonthCredits),tvAgentDayCredits:n('IFA_TAVILY_AGENT_DAY_CREDITS',c.tvAgentDayCredits),tvResearchModel:['mini','pro','auto'].includes(e.IFA_TAVILY_RESEARCH_MODEL)?e.IFA_TAVILY_RESEARCH_MODEL:c.tvResearchModel}};
+const tvCfg=()=>{const c=wbCfg(),e=process.env;const n=(k,d)=>e[k]!=null&&String(e[k]).trim()!==''&&Number.isFinite(+e[k])&&+e[k]>=0?+e[k]:d;return {...c,tvCredit:n('IFA_TAVILY_CREDIT_USD',c.tvCredit),tvDayCredits:n('IFA_TAVILY_DAY_CREDITS',c.tvDayCredits),tvMonthCredits:n('IFA_TAVILY_MONTH_CREDITS',c.tvMonthCredits),tvAgentDayCredits:n('IFA_TAVILY_AGENT_DAY_CREDITS',c.tvAgentDayCredits),tvResearchModel:['mini','pro','auto'].includes(e.IFA_TAVILY_RESEARCH_MODEL)?e.IFA_TAVILY_RESEARCH_MODEL:c.tvResearchModel}};
 function tvSpent(who){const d=wbDay();const s=(w,a)=>+(+((q1("SELECT COALESCE(SUM(units),0) s FROM web_usage WHERE svc='tv' AND "+w,...a)||{}).s||0)).toFixed(2);
- const o={day:s('day=?',[d]),month:s('day>=?',[d.slice(0,8)+'01']),agents:s("day=? AND by LIKE 'agent:%'",[d])};if(who)o.who=s('day=? AND by=?',[d,who]);return o}
+ const o={day:s('day=?',[d]),month:s('day>=?',[d.slice(0,8)+'01']),agents:s("day=? AND by LIKE 'agent:%'",[d])};if(who)o.who=s('day=? AND by=?',[d,who]);
+ // Pending research remains reserved across date boundaries until terminal status. Missing legacy reservations use the conservative pro estimate.
+ const holds=[...TVINFLIGHT.values(),...q("SELECT j.by,COALESCE(r.credits,120) credits FROM web_jobs j LEFT JOIN tv_reservations r ON r.job=j.id WHERE j.engine='tv' AND j.status IN ('queued','running')")];
+ o.reserved={credits:holds.reduce((n,h)=>n+h.credits,0),agents:holds.filter(h=>/^agent:/.test(h.by||'')).reduce((n,h)=>n+h.credits,0)};return o}
 function tvBudget(cr,who){const C=tvCfg(),S=tvSpent(who);
- if(S.day+cr>C.tvDayCredits)throw E(429,'سقف روزانهٔ اعتبار Tavily ('+C.tvDayCredits+' کردیت) پر شده است؛ در «دادهٔ وب › Tavily» سقف را تغییر دهید یا فردا دوباره امتحان کنید');
- if(S.month+cr>C.tvMonthCredits)throw E(429,'سقف ماهانهٔ اعتبار Tavily ('+C.tvMonthCredits+' کردیت) پر شده است');
- if(who&&/^agent:/.test(who)&&S.agents+cr>C.tvAgentDayCredits)throw E(429,'سقف روزانهٔ اعتبار Tavily برای عامل‌ها ('+C.tvAgentDayCredits+' کردیت) پر شده است');
- wbBudget(cr*C.tvCredit)}
+ if(S.day+S.reserved.credits+cr>C.tvDayCredits)throw E(429,'سقف روزانهٔ اعتبار Tavily ('+C.tvDayCredits+' کردیت) پر شده است؛ در «دادهٔ وب › Tavily» سقف را تغییر دهید یا فردا دوباره امتحان کنید');
+ if(S.month+S.reserved.credits+cr>C.tvMonthCredits)throw E(429,'سقف ماهانهٔ اعتبار Tavily ('+C.tvMonthCredits+' کردیت) پر شده است');
+ if(who&&/^agent:/.test(who)&&S.agents+S.reserved.agents+cr>C.tvAgentDayCredits)throw E(429,'سقف روزانهٔ اعتبار Tavily برای عامل‌ها ('+C.tvAgentDayCredits+' کردیت) پر شده است');
+ wbBudget((cr+S.reserved.credits)*C.tvCredit)}
 const TVERR={400:[400,'درخواست نامعتبر'],401:[502,'کلید API نامعتبر یا منقضی است'],403:[502,'این کلید به این عملیات دسترسی ندارد'],404:[404,'یافت نشد'],422:[400,'پارامترها نامعتبر است'],429:[429,'محدودیت نرخ درخواست؛ کمی بعد دوباره امتحان کنید'],432:[402,'سقف اعتبار طرح Tavily پر شده است (ارتقای طرح یا صبر تا دورهٔ بعد)'],433:[402,'سقف پرداخت به‌ازای مصرف (Pay-as-you-go) Tavily پر شده است']};
 const tvSleep=ms=>new Promise(r=>setTimeout(r,ms));
 async function tvCall(op,p,o,by,ref){if(tvOff())throw E(503,'اتصال Tavily خاموش است (IFA_WEB_OFF، IFA_TAVILY_OFF یا IFA_LIVE_OFF)');const key=tvKey();if(!key)throw E(412,'کلید Tavily تنظیم نشده است (IFA_TAVILY_KEY یا «دادهٔ وب › Tavily»)');
- const C=tvCfg(),est=Math.max(0,+o.est||0);if(est>0)tvBudget(est,by);
+ const C=tvCfg(),est=Math.max(0,+o.est||0);const hold=Symbol(op);if(est>0){tvBudget(est,by);TVINFLIGHT.set(hold,{credits:est,by})}
  const H={Authorization:'Bearer '+key,Accept:'application/json'};if(o.body)H['Content-Type']='application/json';if(process.env.IFA_TAVILY_PROJECT)H['X-Project-ID']=String(process.env.IFA_TAVILY_PROJECT);
  let ok=0,units=0,err='',st=0,j={};const t0=Date.now();
  try{for(let i=0;;i++){let r;
@@ -33,7 +39,7 @@ async function tvCall(op,p,o,by,ref){if(tvOff())throw E(503,'اتصال Tavily �
   if(st<200||st>=300){const d=j&&j.detail;err=String((d&&typeof d==='object'?(d.error||d.message||JSON.stringify(d)):d)||j.error||j.message||('HTTP '+st)).slice(0,300);const m=TVERR[st]||[502,'خطای سرویس (HTTP '+st+')'];throw E(m[0],'Tavily: '+m[1]+(st===400||st===422?' — '+err:''))}
   ok=1;units=o.bill===false?0:j&&j.usage&&isFinite(+j.usage.credits)?+j.usage.credits:est;return j}
  catch(e){if(!err)err=String(e.message||e).slice(0,300);if(e.code)throw e;throw E(502,'Tavily: '+err)}
- finally{try{run('INSERT INTO web_usage(ts,day,svc,op,units,usd,ok,ref,by,err) VALUES(?,?,?,?,?,?,?,?,?,?)',Date.now(),wbDay(),'tv',op,units,+(units*C.tvCredit).toFixed(5),ok,String(ref||'').slice(0,200),by||'system',err||null)}catch(e){}lstat('tavily',!!ok,ok?op+' · '+(Date.now()-t0)+'ms':err)}}
+ finally{try{run('INSERT INTO web_usage(ts,day,svc,op,units,usd,ok,ref,by,err) VALUES(?,?,?,?,?,?,?,?,?,?)',Date.now(),wbDay(),'tv',op,units,+(units*C.tvCredit).toFixed(5),ok,String(ref||'').slice(0,200),by||'system',err||null)}catch(e){}TVINFLIGHT.delete(hold);lstat('tavily',!!ok,ok?op+' · '+(Date.now()-t0)+'ms':err)}}
 /* ---------- parameter hygiene ---------- */
 const tvPick=(v,L,d)=>L.includes(v)?v:d;
 const tvInt=(v,a,b,d)=>{if(v==null||v==='')return d;v=Math.round(+v);return isFinite(v)?Math.max(a,Math.min(b,v)):d};
@@ -121,16 +127,17 @@ async function tvResearchGet(rid,by){if(!/^[A-Za-z0-9_\-]{6,80}$/.test(String(ri
  const j=await tvCall('research.get','/research/'+encodeURIComponent(rid)+'?include_usage=true',{method:'GET',est:0,bill:false,timeout:30e3,retries:2},by,rid);
  const S=(Array.isArray(j.sources)?j.sources:[]).map(s=>typeof s==='string'?{url:s}:{url:s&&s.url,title:wbClean(s&&s.title,140)}).filter(s=>s.url&&/^https?:\/\//.test(s.url)&&!tvBlocked(s.url)).slice(0,25);
  return {requestId:j.request_id||rid,status:j.status||'pending',content:j.content==null?null:typeof j.content==='string'?tvMx(j.content).slice(0,60000):j.content,sources:S,credits:j.usage&&isFinite(+j.usage.credits)?+j.usage.credits:null,responseTime:+j.response_time||null,createdAt:j.created_at||null,error:j.error||null}}
-function tvJobAdd(b,by){const C=tvCfg();if(!tvKey())throw E(412,'کلید Tavily تنظیم نشده است');const body_=tvResearchBody(b||{});
+function tvJobAdd(b,by){const C=tvCfg();if(tvOff())throw E(503,'اتصال Tavily خاموش است');if(!tvKey())throw E(412,'کلید Tavily تنظیم نشده است');const body_=tvResearchBody(b||{});
  if(q("SELECT id FROM web_jobs WHERE status IN ('queued','running')").length>=5)throw E(409,'حداکثر ۵ پژوهش هم‌زمان');tvBudget(tvEst('research',body_),by);
- const id=Number(run('INSERT INTO web_jobs(kind,engine,q,status,ts,by,usd) VALUES(?,?,?,?,?,?,0)','research','tv',body_.input,'queued',Date.now(),by).lastInsertRowid);wbCachePut('tvjob:'+id,body_);
+ const id=Number(run('INSERT INTO web_jobs(kind,engine,q,status,ts,by,usd) VALUES(?,?,?,?,?,?,0)','research','tv',body_.input,'queued',Date.now(),by).lastInsertRowid);run('INSERT INTO tv_reservations(job,credits) VALUES(?,?)',id,tvEst('research',body_));wbCachePut('tvjob:'+id,body_);
  setTimeout(()=>tvJobRun(id).catch(()=>{}),10);audit(by,'','web.research','web_jobs',String(id),{engine:'tv',model:body_.model});return {ok:true,id,engine:'tv',model:body_.model}}
 const TVJBUSY=new Set();
 async function tvJobRun(id){if(TVJBUSY.has(id))return;const J=q1('SELECT * FROM web_jobs WHERE id=?',id);if(!J||J.engine!=='tv'||!['queued','running'].includes(J.status))return;TVJBUSY.add(id);const C=tvCfg();
  const fin=(st,res,src,err,cr)=>{run('UPDATE web_jobs SET status=?,result=?,sources=?,err=?,done=?,usd=COALESCE(usd,0)+? WHERE id=?',st,res?JSON.stringify(res).slice(0,60000):null,JSON.stringify(src||[]),err||null,Date.now(),+((cr||0)*C.tvCredit).toFixed(4),id);
   if(cr)try{run('INSERT INTO web_usage(ts,day,svc,op,units,usd,ok,ref,by,err) VALUES(?,?,?,?,?,?,?,?,?,?)',Date.now(),wbDay(),'tv','research.credits',cr,+(cr*C.tvCredit).toFixed(5),1,J.xid||String(id),J.by,null)}catch(e){}
+  run('DELETE FROM tv_reservations WHERE job=?',id);
   if(st==='done')wbJobMem(id);else try{fire('web.research',{id,text:'پژوهش «'+J.q.slice(0,80)+'» ناموفق بود: '+String(err||'').slice(0,120),q:J.q.slice(0,200)},'wr|job|'+id+'|f')}catch(e){}};
- try{if(!J.xid){const b=(wbCacheGet('tvjob:'+id,72)||{});delete b.cachedAt;if(!b.input)b.input=J.q;const j=await tvResearchCreate(b,J.by);run("UPDATE web_jobs SET xid=?,status='running' WHERE id=?",j.request_id,id);return}
+ try{if(!J.xid&&Date.now()-J.ts>3*3600e3){fin('failed',null,[],'زمان انتظار پژوهش به پایان رسید (۳ ساعت)',0);return}if(!J.xid){const b=(wbCacheGet('tvjob:'+id,72)||{});delete b.cachedAt;if(!b.input)b.input=J.q;const j=await tvResearchCreate(b,J.by);run("UPDATE web_jobs SET xid=?,status='running' WHERE id=?",j.request_id,id);return}
   const r=await tvResearchGet(J.xid,J.by);
   if(r.status==='completed'){const c=r.content;let res;if(c&&typeof c==='object')res={...c,answer:wbClean(c.answer||c.summary||'',4000)||JSON.stringify(c).slice(0,1500)};else{const t=String(c||'');res={answer:wbClean(t.replace(/[#*_>`]/g,' '),1500),report:t,findings:[]}}
    res.engine='tavily';res.model=(wbCacheGet('tvjob:'+id,96)||{}).model||null;res.injection=WBINJ.test(JSON.stringify(c||''));fin('done',res,r.sources,null,r.credits||0)}

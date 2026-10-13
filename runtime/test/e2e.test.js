@@ -149,6 +149,26 @@ test('phase 6: MCP (official SDK, Streamable HTTP) with ifa_mcp_ keys',async()=>
   const bad=new Client({name:'bad',version:'1'});await assert.rejects(bad.connect(new StreamableHTTPClientTransport(new URL(RB+'/mcp'),{requestInit:{headers:{Authorization:'Bearer ifa_mcp_nope'}}})));
 });
 
+test('MCP workflow wrappers respect role, tool whitelist and run ownership',async()=>{
+  const cases=[
+    {name:'restricted-sales',role:'sales',level:1,tools:['rates_search'],workflow:'procurement-rfq'},
+    {name:'viewer-workflows',role:'viewer',level:1,workflow:'lane-autopilot'},
+    {name:'sales-finance',role:'sales',level:1,workflow:'finance-payment'}
+  ];
+  for(const data of cases){
+    const k=(await api('/api/agents/keys',{method:'POST',body:data},T)).j.key;
+    const c=new Client({name:'scope-test',version:'1'});await c.connect(new StreamableHTTPClientTransport(new URL(RB+'/mcp'),{requestInit:{headers:{Authorization:'Bearer '+k}}}));
+    const before=RT.engine.runs.list(100).length;
+    const r=await c.callTool({name:'workflow_start',arguments:{workflow:data.workflow,input:{lane:{pol:'Ningbo',dest:'Tehran'},pol:'Ningbo',dest:'Tehran',vendor:'X',amount:1,cur:'USD',ref:'SCOPED'}}});
+    assert.equal(r.isError,true,data.name);assert.equal(RT.engine.runs.list(100).length,before,'denied request must not create a workflow');
+    const foreign=RT.engine.runs.list(100).find(x=>x.by==='admin');assert.ok(foreign);
+    const status=await c.callTool({name:'workflow_status',arguments:{runId:foreign.id}});assert.equal(status.isError,true,'foreign workflow data must not leak');await c.close();
+  }
+  await api('/api/users',{method:'POST',body:{username:'sales-scope',name:'Sales',role:'sales',password:'Sales-Pass-1234'}},T);
+  const sales=(await api('/api/login',{method:'POST',body:{username:'sales-scope',password:'Sales-Pass-1234'}})).j.token;
+  const r=await api('/api/runtime/workflows/finance-payment/start',{method:'POST',body:{input:{vendor:'X',amount:1,cur:'USD',ref:'DENIED'}}},sales);assert.equal(r.s,403,'HTTP proxy must enforce initiating role');
+});
+
 test('phase 8: deep-research workflow — Tavily Research job polled to completion, memory + task closed',async()=>{
   const r=await api('/api/runtime/workflows/deep-research/start',{method:'POST',body:{input:{q:'Status of container shipping through the Strait of Hormuz',model:'mini'}}},T);
   assert.equal(r.s,200,JSON.stringify(r.j));

@@ -33,6 +33,7 @@ function boot(extra){const dir=fs.mkdtempSync(path.join(os.tmpdir(),'ifa-br-'));
   let r=await S1.api('/api/runtime/status',{},T);t('status: shadow mode, runtime healthy',r.j.mode==='shadow'&&r.j.health&&r.j.health.ok===true,r.j);
   t('bridge rejects missing token',(await S1.api('/api/runtime/agents')).s===401);
   t('bridge rejects wrong token',(await S1.api('/api/runtime/agents',{headers:{'X-IFA-Runtime-Token':'x'.repeat(TOKEN.length)}})).s===401);
+  t('bridge rejects equal-character-length non-ASCII token without 500',(await S1.api('/api/runtime/agents',{headers:{'X-IFA-Runtime-Token':'é'.repeat(TOKEN.length)}})).s===401);
   r=await S1.api('/api/runtime/agents',{headers:{'X-IFA-Runtime-Token':TOKEN}});const an=(r.j.agents||[]).find(a=>a.id==='analyst');
   t('bridge exposes agent registry + JSON schemas',an&&an.tools.some(x=>x.name==='rates_search'&&x.schema&&x.schema.type==='object')&&!!an.instructions);
   t('stale/unknown ctx → 410',(await S1.api('/api/runtime/call',{method:'POST',headers:{'X-IFA-Runtime-Token':TOKEN},body:{ctx:'cdeadbeef',tool:'fx_get'}})).s===410);

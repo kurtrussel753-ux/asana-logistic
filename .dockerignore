@@ -5,3 +5,7 @@ test
 *.zip
 runtime
 deploy
+
+# Never package or commit deployment credentials
+.env*
+!.env.example
