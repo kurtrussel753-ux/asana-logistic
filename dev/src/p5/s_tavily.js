@@ -7,6 +7,9 @@
 db.exec(`CREATE TABLE IF NOT EXISTS tv_watch(id INTEGER PRIMARY KEY,name TEXT,query TEXT,kind TEXT,topic TEXT,days INTEGER,every INTEGER,depth TEXT,domains TEXT,xdomains TEXT,country TEXT,active INTEGER,last INTEGER,runs INTEGER,hits INTEGER,err TEXT,ts INTEGER,by TEXT);`);
 // Research reservations survive restarts; ordinary HTTP calls reserve synchronously until their usage row is written.
 db.exec(`CREATE TABLE IF NOT EXISTS tv_reservations(job INTEGER PRIMARY KEY,credits REAL NOT NULL);`);
+db.exec(`CREATE TABLE IF NOT EXISTS tv_job_policy(job INTEGER PRIMARY KEY,private INTEGER NOT NULL DEFAULT 0,owner TEXT);`);
+if(!q('PRAGMA table_info(tv_job_policy)').some(x=>x.name==='owner'))db.exec('ALTER TABLE tv_job_policy ADD COLUMN owner TEXT');
+const tvJobVisible=(j,u)=>{const p=q1('SELECT private,owner FROM tv_job_policy WHERE job=?',j.id);return !p||!p.private||!!u&&((p.owner||j.by)===u.username||['admin','manager'].includes(u.role))};
 const TVINFLIGHT=new Map();
 Object.assign(WB0,{tvCredit:0.008,tvDayCredits:200,tvMonthCredits:1500,tvAgentDayCredits:60,tvResearchModel:'auto'});
 WBN.tv='Tavily';
@@ -127,15 +130,16 @@ async function tvResearchGet(rid,by){if(!/^[A-Za-z0-9_\-]{6,80}$/.test(String(ri
  const j=await tvCall('research.get','/research/'+encodeURIComponent(rid)+'?include_usage=true',{method:'GET',est:0,bill:false,timeout:30e3,retries:2},by,rid);
  const S=(Array.isArray(j.sources)?j.sources:[]).map(s=>typeof s==='string'?{url:s}:{url:s&&s.url,title:wbClean(s&&s.title,140)}).filter(s=>s.url&&/^https?:\/\//.test(s.url)&&!tvBlocked(s.url)).slice(0,25);
  return {requestId:j.request_id||rid,status:j.status||'pending',content:j.content==null?null:typeof j.content==='string'?tvMx(j.content).slice(0,60000):j.content,sources:S,credits:j.usage&&isFinite(+j.usage.credits)?+j.usage.credits:null,responseTime:+j.response_time||null,createdAt:j.created_at||null,error:j.error||null}}
-function tvJobAdd(b,by){const C=tvCfg();if(tvOff())throw E(503,'اتصال Tavily خاموش است');if(!tvKey())throw E(412,'کلید Tavily تنظیم نشده است');const body_=tvResearchBody(b||{});
+function tvJobAdd(b,by,owner=by){const C=tvCfg();if(tvOff())throw E(503,'اتصال Tavily خاموش است');if(!tvKey())throw E(412,'کلید Tavily تنظیم نشده است');const body_=tvResearchBody(b||{});
  if(q("SELECT id FROM web_jobs WHERE status IN ('queued','running')").length>=5)throw E(409,'حداکثر ۵ پژوهش هم‌زمان');tvBudget(tvEst('research',body_),by);
- const id=Number(run('INSERT INTO web_jobs(kind,engine,q,status,ts,by,usd) VALUES(?,?,?,?,?,?,0)','research','tv',body_.input,'queued',Date.now(),by).lastInsertRowid);run('INSERT INTO tv_reservations(job,credits) VALUES(?,?)',id,tvEst('research',body_));wbCachePut('tvjob:'+id,body_);
+ const id=Number(run('INSERT INTO web_jobs(kind,engine,q,status,ts,by,usd) VALUES(?,?,?,?,?,?,0)','research','tv',body_.input,'queued',Date.now(),by).lastInsertRowid);run('INSERT INTO tv_reservations(job,credits) VALUES(?,?)',id,tvEst('research',body_));wbCachePut('tvjob:'+id,body_);if(b&&b.memory===false)run('INSERT INTO tv_job_policy(job,private,owner) VALUES(?,1,?)',id,owner);
  setTimeout(()=>tvJobRun(id).catch(()=>{}),10);audit(by,'','web.research','web_jobs',String(id),{engine:'tv',model:body_.model});return {ok:true,id,engine:'tv',model:body_.model}}
 const TVJBUSY=new Set();
 async function tvJobRun(id){if(TVJBUSY.has(id))return;const J=q1('SELECT * FROM web_jobs WHERE id=?',id);if(!J||J.engine!=='tv'||!['queued','running'].includes(J.status))return;TVJBUSY.add(id);const C=tvCfg();
  const fin=(st,res,src,err,cr)=>{run('UPDATE web_jobs SET status=?,result=?,sources=?,err=?,done=?,usd=COALESCE(usd,0)+? WHERE id=?',st,res?JSON.stringify(res).slice(0,60000):null,JSON.stringify(src||[]),err||null,Date.now(),+((cr||0)*C.tvCredit).toFixed(4),id);
   if(cr)try{run('INSERT INTO web_usage(ts,day,svc,op,units,usd,ok,ref,by,err) VALUES(?,?,?,?,?,?,?,?,?,?)',Date.now(),wbDay(),'tv','research.credits',cr,+(cr*C.tvCredit).toFixed(5),1,J.xid||String(id),J.by,null)}catch(e){}
   run('DELETE FROM tv_reservations WHERE job=?',id);
+  if((q1('SELECT private FROM tv_job_policy WHERE job=?',id)||{}).private)return;
   if(st==='done')wbJobMem(id);else try{fire('web.research',{id,text:'پژوهش «'+J.q.slice(0,80)+'» ناموفق بود: '+String(err||'').slice(0,120),q:J.q.slice(0,200)},'wr|job|'+id+'|f')}catch(e){}};
  try{if(!J.xid&&Date.now()-J.ts>3*3600e3){fin('failed',null,[],'زمان انتظار پژوهش به پایان رسید (۳ ساعت)',0);return}if(!J.xid){const b=(wbCacheGet('tvjob:'+id,72)||{});delete b.cachedAt;if(!b.input)b.input=J.q;const j=await tvResearchCreate(b,J.by);run("UPDATE web_jobs SET xid=?,status='running' WHERE id=?",j.request_id,id);return}
   const r=await tvResearchGet(J.xid,J.by);
@@ -213,10 +217,11 @@ const TVSANC=/(sanction|designat|OFAC|SDN|blacklist|embargo|seiz|indict|fraud|ت
   if(hits.length&&out.risk==='low'){out.risk='medium';out.reasons.push('Tavily: '+fa_(hits.length)+' منبع وب با اشاره به تحریم/خبر منفی دربارهٔ این نام — بررسی دستی لازم است')}
   out.sources=[...(out.sources||[]),...r.results.slice(0,6).map(x=>({url:x.url,title:x.title}))].slice(0,10);out.credits=r.credits;
   try{run('UPDATE web_party SET web=?,risk=? WHERE id=(SELECT MAX(id) FROM web_party WHERE name=?)',JSON.stringify(out.web),out.risk,nm)}catch(e){}}catch(e){out.webError=String(e.message).slice(0,200)}return out}}
+const tvHasCert=(text,label)=>new RegExp('(?:^|[^A-Za-z0-9])'+label.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')+'(?:$|[^A-Za-z0-9])','i').test(text);
 async function tvSite(b,by,ctx){const url=wbUrl(b.url);tvAgUrl(url,ctx);const host=wbHost(url);
  const r=await tvCrawl({url,instructions:wbClean(b.instructions,300)||'Company profile: about us, services, lanes, offices, certifications, contact details',limit:tvInt(b.limit,3,30,10),max_depth:2,chunks_per_source:3,extract_depth:'basic',max_chars:6000},by,'site.crawl',ctx);
  const all=r.results.map(x=>x.content).join('\n');const emails=[...new Set((all.match(/[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/g)||[]).filter(e=>!/\.(png|jpg|gif|webp)$/i.test(e)))].slice(0,8);const phones=[...new Set((all.match(/\+\d[\d\s().-]{7,18}\d/g)||[]).map(p=>p.trim()))].slice(0,8);
- const prof={name:host,website:new URL(url).origin,pages:r.results.map(x=>({url:x.url,title:x.title,excerpt:wbClean(x.content,600)})),emails,phones,certifications:['FIATA','IATA','AEO','ISO 9001','ISO 14001','WCA','JCtrans'].filter(k=>all.includes(k)),engine:'tavily',credits:r.credits,injection:r.injection>0};
+ const prof={name:host,website:new URL(url).origin,pages:r.results.map(x=>({url:x.url,title:x.title,excerpt:wbClean(x.content,600)})),emails,phones,certifications:['FIATA','IATA','AEO','ISO 9001','ISO 14001','WCA','JCtrans'].filter(k=>tvHasCert(all,k)),engine:'tavily',credits:r.credits,injection:r.injection>0};
  const ex=q1('SELECT id FROM web_party WHERE kind=? AND name=?','company',host);if(ex)run('UPDATE web_party SET profile=?,ts=? WHERE id=?',JSON.stringify(prof),Date.now(),ex.id);else run('INSERT INTO web_party(name,kind,country,risk,local,web,profile,ts,by) VALUES(?,?,?,?,?,?,?,?,?)',host,'company','',null,null,null,JSON.stringify(prof),Date.now(),by);
  audit(by,'','web.profile','web_party',host,{pages:prof.pages.length,engine:'tavily'});return prof}
 /* ================= 9) agent & MCP tools (same registry → policy gateway, budgets, audit; runtime and /mcp see them automatically) ================= */
@@ -237,7 +242,7 @@ tool('tavily_research',{d:'شروع پژوهش عمیق Tavily (ناهمگام؛
  args:{q:['string','پرسش پژوهش',1],model:['string','mini/pro/auto'],wait:['number','ثانیهٔ انتظار برای نتیجه'],domains:['array','دامنه‌های ترجیحی',0,{type:'string'}]},
  run:async(a,ctx)=>{const who=tvWho(ctx);const r=tvJobAdd({q:a.q,model:a.model,domains:a.domains},who);if(+a.wait>0){const J=await tvJobWait(r.id,Math.min(120,+a.wait));return {...r,status:J.status,result:J.result,sources:(J.sources||[]).map(s=>({kind:'web',url:s.url,title:s.title||s.url}))}}return {...r,status:'queued',sources:[]}}});
 tool('tavily_research_get',{d:'وضعیت و نتیجهٔ یک پژوهش Tavily (شناسهٔ کار پژوهش)',args:{id:['number','شناسهٔ پژوهش',1]},
- run:async a=>{const r=q1('SELECT * FROM web_jobs WHERE id=?',+a.id);if(!r)throw E(404,'پژوهش یافت نشد');if(r.engine==='tv'&&['queued','running'].includes(r.status))await tvJobRun(r.id).catch(()=>{});const J=wbJobRow(q1('SELECT * FROM web_jobs WHERE id=?',+a.id));
+ run:async(a,ctx)=>{const r=q1('SELECT * FROM web_jobs WHERE id=?',+a.id);if(!r||!tvJobVisible(r,ctx.actor||agActor(ctx.ag)))throw E(404,'پژوهش یافت نشد');if(r.engine==='tv'&&['queued','running'].includes(r.status))await tvJobRun(r.id).catch(()=>{});const J=wbJobRow(q1('SELECT * FROM web_jobs WHERE id=?',+a.id));
   return {...J,result:J.result&&J.result.report?{...J.result,report:String(J.result.report).slice(0,8000)}:J.result,sources:(J.sources||[]).map(s=>({kind:'web',url:s.url,title:s.title||s.url}))}}});
 tool('tavily_usage',{d:'مصرف اعتبار Tavily: امروز/ماه در سامانه، سقف‌ها و (در صورت امکان) مصرف کلید و طرح حساب',run:async()=>{const S=tvStatus();let live=null;try{live=await tvUsage('agent')}catch(e){live={error:String(e.message).slice(0,160)}}return {spent:S.spent,caps:S.caps,byOp:S.byOp,account:live}}});
 const TVT=['tavily_search','tavily_extract','tavily_crawl','tavily_map','tavily_research','tavily_research_get','tavily_usage'];
@@ -279,9 +284,9 @@ route('POST','/api/tavily/extract',async(req,u)=>tvExtract(await tvBody(req),u.u
 route('POST','/api/tavily/crawl',async(req,u)=>tvCrawl(await tvBody(req),u.username,'api.crawl'),'web.use');
 route('POST','/api/tavily/map',async(req,u)=>tvMap(await tvBody(req),u.username,'api.map'),'web.use');
 route('POST','/api/tavily/research',async(req,u)=>{const b=await tvBody(req);const r=tvJobAdd(b,u.username);return +b.wait>0?{...r,job:await tvJobWait(r.id,Math.min(60,+b.wait))}:r},'web.research');
-route('GET','/api/tavily/research',()=>({items:q("SELECT * FROM web_jobs WHERE engine='tv' ORDER BY id DESC LIMIT 40").map(wbJobRow),model:tvCfg().tvResearchModel,estimates:TVRC}),'');
-route('GET','/api/tavily/research/:id',(req,u,P)=>{const r=q1("SELECT * FROM web_jobs WHERE id=? AND engine='tv'",+P.id);if(!r)throw E(404,'یافت نشد');return wbJobRow(r)},'');
-route('POST','/api/tavily/research/:id/poll',async(req,u,P)=>{const r=q1("SELECT * FROM web_jobs WHERE id=? AND engine='tv'",+P.id);if(!r)throw E(404,'یافت نشد');await tvJobRun(r.id);return wbJobRow(q1('SELECT * FROM web_jobs WHERE id=?',r.id))},'web.research');
+route('GET','/api/tavily/research',(req,u)=>({items:q("SELECT * FROM web_jobs WHERE engine='tv' ORDER BY id DESC LIMIT 40").filter(j=>tvJobVisible(j,u)).map(wbJobRow),model:tvCfg().tvResearchModel,estimates:TVRC}),'');
+route('GET','/api/tavily/research/:id',(req,u,P)=>{const r=q1("SELECT * FROM web_jobs WHERE id=? AND engine='tv'",+P.id);if(!r||!tvJobVisible(r,u))throw E(404,'یافت نشد');return wbJobRow(r)},'');
+route('POST','/api/tavily/research/:id/poll',async(req,u,P)=>{const r=q1("SELECT * FROM web_jobs WHERE id=? AND engine='tv'",+P.id);if(!r||!tvJobVisible(r,u))throw E(404,'یافت نشد');await tvJobRun(r.id);return wbJobRow(q1('SELECT * FROM web_jobs WHERE id=?',r.id))},'web.research');
 route('GET','/api/tavily/watches',()=>({items:q('SELECT * FROM tv_watch ORDER BY active DESC,id DESC').map(tvWatchPub),suggest:TVWSUG.map(([name,query,kind])=>({name,query,kind})),kinds:TVWK}),'');
 route('POST','/api/tavily/watches',async(req,u)=>tvWatchSave(await tvBody(req),u.username),'web.manage');
 route('PUT','/api/tavily/watches/:id',async(req,u,P)=>{if(!q1('SELECT id FROM tv_watch WHERE id=?',+P.id))throw E(404,'پایشگر یافت نشد');return tvWatchSave(await tvBody(req),u.username,+P.id)},'web.manage');

@@ -4,7 +4,7 @@
 'use strict';
 const http=require('node:http'),zlib=require('node:zlib'),crypto=require('node:crypto'),fs=require('node:fs'),path=require('node:path');
 let DatabaseSync;try{({DatabaseSync}=require('node:sqlite'))}catch(e){console.error('این سرور به Node.js نسخهٔ 22.5 یا جدیدتر نیاز دارد. اجرا:\n  node --experimental-sqlite --no-warnings server.js');process.exit(1)}
-const VERSION='1.19.0';
+const VERSION='1.20.0';
 /* ---------- optional .env next to server.js (never served; real environment variables win) ---------- */
 (()=>{const f=process.env.IFA_ENV_FILE===undefined?path.join(__dirname,'.env'):process.env.IFA_ENV_FILE;if(!f)return;try{if(!fs.existsSync(f))return;for(const l of fs.readFileSync(f,'utf8').split(/\r?\n/)){if(/^\s*(#|$)/.test(l))continue;const m=l.match(/^\s*(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*?)\s*$/);if(!m)continue;let v=m[2];if(/^(['"]).*\1$/.test(v))v=v.slice(1,-1);if(process.env[m[1]]===undefined)process.env[m[1]]=v}}catch(e){console.error('.env:',e.message)}})();
 const CFG_FILE=process.env.IFA_CONFIG||path.join(__dirname,'config.json');

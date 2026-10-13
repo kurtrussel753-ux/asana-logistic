@@ -6,7 +6,7 @@ services:
   ifa:
     build:
       context: ..
-    image: asana-logistics:15.25
+    image: asana-logistics:15.26
     restart: unless-stopped
     ports: ["127.0.0.1:8080:8080"]
     env_file: ../.env.production

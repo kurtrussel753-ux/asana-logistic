@@ -106,6 +106,10 @@
    "markers": true
   },
   {
+   "module": "dev/src/p5/u_intelligence.js",
+   "markers": true
+  },
+  {
    "file": "server/src/900-http-server-static.js"
   }
  ]

@@ -13,7 +13,7 @@ if(sha(oldB)!==M.index.sha256){console.error('rebundle: bundle parts do not matc
 const H=oldB.toString('utf8');const re=/const SRVJS='([A-Za-z0-9+\/=]*)'/;const m=H.match(re);if(!m){console.error('rebundle: SRVJS not found in index.html');process.exit(1)}
 const b64=fs.readFileSync(path.join(R,'server.js')).toString('base64');
 // client modules (dev/src/asst/<name>) live between markers right after the SRVJS statement, so a change touches the same few parts
-const CLIENT=['s_tavily-client.js'];let H2=H.replace(re,()=>"const SRVJS='"+b64+"'");
+const CLIENT=['s_tavily-client.js','t_intelligence-client.js'];let H2=H.replace(re,()=>"const SRVJS='"+b64+"'");
 for(const n of CLIENT){const src=fs.readFileSync(path.join(R,'dev','src','asst',n),'utf8').replace(/\s+$/,'')+'\n';if(/<\/script/i.test(src)){console.error('rebundle: '+n+' must not contain </script');process.exit(1)}
  const a='/* >>> client:'+n+' */\n',z='/* <<< client:'+n+' */\n',blk=a+src+z;const i=H2.indexOf(a),j=H2.indexOf(z);
  if(i>=0&&j>i)H2=H2.slice(0,i)+blk+H2.slice(j+z.length);else{const i0=H2.indexOf("const SRVJS='"),k=H2.indexOf('\n',i0)+1;if(i0<0||k<=0||!/;\s*$/.test(H2.slice(k-3,k))){console.error('rebundle: SRVJS statement line not found');process.exit(1)}H2=H2.slice(0,k)+blk+H2.slice(k)}}

@@ -1,7 +1,7 @@
 services:
   ifa:
     build: .
-    image: asana-logistics:15.25
+    image: asana-logistics:15.26
     restart: unless-stopped
     ports:
       - "8080:8080"

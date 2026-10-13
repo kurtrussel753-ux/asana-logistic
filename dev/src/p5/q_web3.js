@@ -132,6 +132,6 @@ route('GET','/api/web/forwarders',()=>({items:q('SELECT * FROM web_cand ORDER BY
 route('POST','/api/web/forwarders/:id/status',async(req,u,P)=>{const b=await body(req);const c=q1('SELECT * FROM web_cand WHERE id=?',+P.id);if(!c)throw E(404,'یافت نشد');const st=['new','invited','partner','rejected'].includes(b.status)?b.status:'new';run('UPDATE web_cand SET status=? WHERE id=?',st,c.id);return {ok:true}},'web.use');
 route('POST','/api/web/profile',async(req,u)=>wbProfile(await body(req),u.username),'web.use');
 route('POST','/api/web/research',async(req,u)=>wbJobAdd(await body(req),u.username),'web.research');
-route('GET','/api/web/research',()=>({items:q('SELECT * FROM web_jobs ORDER BY id DESC LIMIT 40').map(wbJobRow),agentCredits:wbCfg().fcAgentCredits}),'');
-route('GET','/api/web/research/:id',(req,u,P)=>{const r=q1('SELECT * FROM web_jobs WHERE id=?',+P.id);if(!r)throw E(404,'یافت نشد');return wbJobRow(r)},'');
-route('POST','/api/web/research/:id/poll',async(req,u,P)=>{const r=q1('SELECT * FROM web_jobs WHERE id=?',+P.id);if(!r)throw E(404,'یافت نشد');await wbJobRun(r.id);return wbJobRow(q1('SELECT * FROM web_jobs WHERE id=?',r.id))},'web.use');
+route('GET','/api/web/research',(req,u)=>({items:q('SELECT * FROM web_jobs ORDER BY id DESC LIMIT 40').filter(j=>tvJobVisible(j,u)).map(wbJobRow),agentCredits:wbCfg().fcAgentCredits}),'');
+route('GET','/api/web/research/:id',(req,u,P)=>{const r=q1('SELECT * FROM web_jobs WHERE id=?',+P.id);if(!r||!tvJobVisible(r,u))throw E(404,'یافت نشد');return wbJobRow(r)},'');
+route('POST','/api/web/research/:id/poll',async(req,u,P)=>{const r=q1('SELECT * FROM web_jobs WHERE id=?',+P.id);if(!r||!tvJobVisible(r,u))throw E(404,'یافت نشد');await wbJobRun(r.id);return wbJobRow(q1('SELECT * FROM web_jobs WHERE id=?',r.id))},'web.use');

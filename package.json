@@ -1,6 +1,6 @@
 {
   "name": "iran-freight-atlas",
-  "version": "15.25.0",
+  "version": "15.26.0",
   "private": true,
   "description": "سامانه لجستیک آسانا · Asana Logistics (web app + team server)",
   "main": "server.js",
@@ -13,7 +13,7 @@
     "start": "node --experimental-sqlite --no-warnings server.js",
     "reset-admin": "node --experimental-sqlite --no-warnings server.js --reset-admin",
     "pretest": "node scripts/restore.js",
-    "test": "node --experimental-sqlite --no-warnings test/smoke.js && node test/agents.test.js && node test/runtime.bridge.test.js && node test/tavily.test.js",
+    "test": "node --experimental-sqlite --no-warnings test/smoke.js && node test/agents.test.js && node test/runtime.bridge.test.js && node test/tavily.test.js && node test/intelligence.test.js",
     "test:agents": "node test/agents.test.js",
     "test:llm": "node test/llm.live.js",
     "test:bridge": "node test/runtime.bridge.test.js",
@@ -23,6 +23,7 @@
     "probe:llm": "node scripts/llm-probe.js",
     "runtime": "npm --prefix runtime start",
     "build:server": "node scripts/build-server.js && node scripts/sync-runtime.js && node scripts/rebundle.js",
-    "check:build": "node scripts/build-server.js --check && node scripts/sync-runtime.js --check && node scripts/rebundle.js --check"
+    "check:build": "node scripts/build-server.js --check && node scripts/sync-runtime.js --check && node scripts/rebundle.js --check",
+    "test:intelligence": "node test/intelligence.test.js"
   }
 }
